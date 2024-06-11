@@ -1,0 +1,2 @@
+- `segment_tree.py` 是rainbow_DQN用的
+- `cvae.py` 是利用 VAE 学习transistion的模型用的
