@@ -1,11 +1,10 @@
-import time
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset, random_split
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from tqdm import trange, tqdm
+from tqdm import trange
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import silhouette_score
@@ -41,15 +40,17 @@ class CVAE(nn.Module):
     def generate_test(self, batch, action_space, epoch=0, save_path=None):
         '''生成一些条件进行生成，返回生成数据的轮廓系数 \\
         - batch: 生成批量，建议32
-        - action_space: 动作空间，假如是离散动作，写可选动作个数，暂不支持离散动作
+        - action_space: 动作空间，假如是离散动作，写可选动作个数，如果是连续动作，传入动作界限：[下界，上界]
         - epoch: 图片名称，默认0，如果是多epoch训练可以传入该参数
-        - save_path: 图片路径，默认是None，表示不存图
+        - save_path: 图片路径，默认是None，表示不保存生成图
         '''
         
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        conditions = torch.tensor([[i] * 8 for i in range(action_space)]).view(-1)  # TODO: 支持连续型动作
-        if action_space > 1:
+        if isinstance(action_space, int):
+            conditions = torch.tensor([[i] * 8 for i in range(action_space)]).view(-1)
             one_hot_conditions = torch.eye(action_space)[conditions].to(device)
+        elif isinstance(action_space, list):  # TODO 连续动作空间需要测试
+            conditions = torch.FloatTensor(batch//4).uniform_(*action_space).repeat(4).sort()[0]
         with torch.no_grad():
             sample = torch.randn(batch, self.latent_dim).to(device)
             generated = self.decode(sample, one_hot_conditions).cpu()
@@ -77,14 +78,24 @@ def cvae_train(model, device, diff_state, action, optimizer, test_and_feedback=F
     action: 动作，必须是 one-hot 形式
     optimizer: 优化器，比如 torch.optim.Adam
     test_and_feedback: 是否给反馈，默认False
-    batch_size: 在线训练时不建议给大
+    batch_size: 在线训练时每次训练的数据量比较小的时候，批次大小不建议给大
     '''
-    def cvae_loss(recon_x, x, mu, logvar):
-        MSE = nn.functional.mse_loss(recon_x, x) 
+    def cvae_loss():
+        MSE = nn.functional.mse_loss(recon_batch, state) 
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         return MSE + KLD
+    
+    def prepare_data():
+        dataset = TensorDataset(diff_state, action)
+        train_size = int(0.8 * len(dataset)) if test_and_feedback else len(dataset)
+        test_size = len(dataset) - train_size
+        train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+        return train_loader,test_loader
+    
     # 整理数据
-    train_loader, test_loader = prepare_data(diff_state, action, test_and_feedback, batch_size)
+    train_loader, test_loader = prepare_data()
     # 训练
     model.train()
     train_loss = 0
@@ -92,13 +103,12 @@ def cvae_train(model, device, diff_state, action, optimizer, test_and_feedback=F
         state, action = state.to(device), action.to(device)
         optimizer.zero_grad()
         recon_batch, mu, logvar = model(state, action)
-        loss = cvae_loss(recon_batch, state, mu, logvar)
+        loss = cvae_loss()
         loss.backward()
         train_loss = loss.item()
         optimizer.step()
     # 测试
     if test_and_feedback:
-        print(f'Train loss: {train_loss/state.shape[0]:.4f}')
         model.eval()
         test_loss = 0
         with torch.no_grad():
@@ -108,22 +118,14 @@ def cvae_train(model, device, diff_state, action, optimizer, test_and_feedback=F
                 test_loss += cvae_loss(recon_batch, state, mu, logvar).item()
 
         test_loss /= len(test_loader.dataset)
+        print(f'Train loss: {train_loss/state.shape[0]:.4f}')
         print(f'Test loss: {test_loss:.4f}')
         return train_loss, test_loss
 
-    def prepare_data(diff_state, action, test_and_feedback, batch_size):
-        dataset = TensorDataset(diff_state, action)
-        train_size = int(0.8 * len(dataset)) if test_and_feedback else len(dataset)
-        test_size = len(dataset) - train_size
-        train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-        return train_loader,test_loader
 
- 
 if __name__ == '__main__':
-    # state, kind = torch.load('data/dataset/Buffer_of_RDQN.pt'), 'expert'  # 专家数据
-    state, kind = torch.load('data/dataset/Buffer_of_regular.pt'), 'regular'  # 业余数据
+    # state, kind = torch.load('data/dataset/Buffer_of_RDQN.pt'), 'expert'  # 专家数据, 比较少
+    state, kind = torch.load('data/dataset/Buffer_of_regular.pt'), 'regular'  # 业余数据, 比较多
 
     action = state[1:, :4]
     diff_state = state[1:, 5:] - state[:-1, 5:]
@@ -132,7 +134,7 @@ if __name__ == '__main__':
     input_dim = diff_state.shape[-1]
     condition_dim = action.shape[-1]
     latent_dim = input_dim
-    batch_size = 32
+    batch_size = 256
 
     fig_path = f'image/VAE/{kind}/{batch_size}/'
     
@@ -142,7 +144,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     quality = []
     for epoch in trange(num_epochs, ncols=70):
-        cvae_train(model, device, diff_state, action, optimizer, True, batch_size)
+        cvae_train(model, device, diff_state, action, optimizer, False, batch_size)
         quality.append(model.generate_test(32, 4, epoch, fig_path))
     print(f'\n==> Generate silhouette score: {[round(i, 3) for i in quality]}')
     plt.figure()
@@ -152,3 +154,4 @@ if __name__ == '__main__':
     plt.grid()
     plt.savefig(f'{fig_path}/Silhouette score.png')
     plt.close()
+    torch.save(model, f'model/cvae/{kind}.pt')

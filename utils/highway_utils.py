@@ -118,9 +118,11 @@ def train_PPO_agent(
             }
             episode_return = 0
             state, done, truncated = env.reset()[0], False, False
+            state = state.reshape(-1)
             while not (done | truncated):
                 action = agent.take_action(state)
                 next_state, reward, done, truncated, info = env.step(action)
+                next_state = next_state.reshape(-1)
                 transition_dict["states"].append(state)
                 transition_dict["actions"].append(action)
                 transition_dict["next_states"].append(next_state)
@@ -148,16 +150,16 @@ def train_PPO_agent(
             save_PPO_data(writer, return_list, time_list, seed_list, 
                           ckpt_path, epoch, episode, best_weight, seed)
             # 记录时间
-            episode_time = (time.time() - episode_begin_time) // 60
+            episode_time = (time.time() - episode_begin_time) / 60
             # 打印回合信息
-            print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %d min ]\033[0m: return: %d, total waitting: %d'
-                  % (seed, episode+1, total_episodes, episode_time, episode_return, info['system_total_waiting_time']))
+            print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %.2f min ]\033[0m: return: %d'
+                  % (seed, episode+1, total_episodes, episode_time, episode_return))
 
             s_episode = 0
     agent.actor.load_state_dict(actor_best_weight)
     agent.critic.load_state_dict(critic_best_weight)
     total_time = time.time() - start_time
-    print(f"\033[32m[ 总耗时 ]\033[0m {total_time / 60:.2f}分钟")
+    print(f"\033[32m[ 总耗时 ]\033[0m {(total_time / 60):.2f}分钟")
     # 如果检查点保存了回报列表, 可以不返回return_list
     return return_list, total_time // 60
 
@@ -252,8 +254,8 @@ def train_SAC_agent(
                 save_SAC_data(writer, replay_buffer, return_list,
                               time_list, seed_list, ckpt_path, epoch, episode, best_weight, seed)
             episode_time = (time.time() - episode_begin_time) // 60
-            print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %d min ]\033[0m: return: %d, total waitting: %d'
-                  % (seed, episode+1, total_episodes, episode_time, episode_return, info['system_total_waiting_time']))
+            print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %.2f min ]\033[0m: return: %d'
+                  % (seed, episode+1, total_episodes, episode_time, episode_return))
         s_episode = 0
     env.close()
     agent.actor.load_state_dict(actor_best_weight)
@@ -348,8 +350,8 @@ def train_DQN(
                           seed_list, ckpt_path, epoch, episode, agent.epsilon,
                           best_weight, seed)
             episode_time = (time.time() - episode_begin_time) // 60
-            print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %d min ]\033[0m: return: %d, total waitting: %d'
-                  % (seed, episode+1, total_episodes, episode_time, episode_return, info['system_total_waiting_time']))
+            print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %.2f min ]\033[0m: return: %d'
+                  % (seed, episode+1, total_episodes, episode_time, episode_return))
             s_episode = 0
     env.close()
     agent.q_net.load_state_dict(best_weight)  # 应用最佳权重
