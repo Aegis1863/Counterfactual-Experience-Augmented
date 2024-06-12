@@ -1,14 +1,15 @@
 import os
+os.environ['LIBSUMO_AS_TRACI'] = '1'  # 终端运行加速
 import sys
 import random
 import gymnasium as gym
+import time
 import sumo_rl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from sumo_rl.environment import observations
-from utils.sumo_utils import train_PPO_agent, compute_advantage, read_ckp
+from utils.sumo_utils import train_PPO_agent, compute_advantage, read_ckp, CVAE, cvae_train
 # from dynamic_model.train_Ensemble_dynamic_model import *
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -17,21 +18,15 @@ import argparse
 import warnings
 warnings.filterwarnings('ignore')
 
-parser = argparse.ArgumentParser(description='PPO 任务')
-parser.add_argument('--model_name', default="PPO", type=str, help='模型名称')
-parser.add_argument('--baseline', default=-1000, type=int, help='增强基线水平')
-parser.add_argument('--roll_size', default=1, type=int, help='推演数')
-parser.add_argument('--rollout', default=5, type=int, help='单次推演步数')
-parser.add_argument('-n', '--net', default="env/big-intersection/big-intersection.net.xml", type=str, help='SUMO路网文件路径')
-parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersection.rou.xml", type=str, help='SUMO车流文件路径')
+parser = argparse.ArgumentParser(description='sumo_PPO 任务')
+parser.add_argument('--model_name', default="sumo_VAE_PPO", type=str, help='模型名称')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
-parser.add_argument('-e', '--episodes', default=50, type=int, help='运行回合数')
-parser.add_argument('--begin_time', default=1000, type=int, help='回合开始时间')
-parser.add_argument('--duration', default=1500, type=int, help='单回合运行时间')
+parser.add_argument('--cvae_kind', default='', type=str, help='是否利用vae辅助，"expert"或"regular"')
+parser.add_argument('--cvae_pretrain', default=True, type=bool, help='cvae 是否已经预训练')
+parser.add_argument('-e', '--episodes', default=100, type=int, help='运行回合数')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
-parser.add_argument('--end_seed', default=42, type=int, help='结束种子')
-parser.add_argument('-r', '--reward', default='diff-waiting-time', type=str, help='奖励函数')
+parser.add_argument('--end_seed', default=52, type=int, help='结束种子')
 args = parser.parse_args()
 
 if args.writer == 2:
@@ -62,14 +57,15 @@ class ValueNet(torch.nn.Module):
     def forward(self, x):
         x = F.relu(self.h_1(F.relu(self.fc1(x))))
         return self.fc2(x)
-    
+
+
 class PPO:
-    ''' PPO算法,采用截断方式 '''
     def __init__(
         self,
         state_dim: int,
         hidden_dim: int,
         action_dim: int,
+        cave: object,
         actor_lr: float=1e-4,
         critic_lr: float=5e-3,
         gamma: float=0.9,
@@ -78,7 +74,7 @@ class PPO:
         eps: float=0.2,
         device: str='cpu',
     ):
-
+        
         self.actor = PolicyNet(state_dim, hidden_dim, action_dim).to(device)
         self.critic = ValueNet(state_dim, hidden_dim).to(device)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=actor_lr)
@@ -88,6 +84,8 @@ class PPO:
         self.epochs = epochs  # 一条序列的数据用来训练轮数
         self.eps = eps  # PPO中截断范围的参数
         self.device = device
+        self.cvae = cave.to(device)
+        self.cvae_optimizer = torch.optim.Adam(self.cvae.parameters(), lr=1e-3)
 
     def take_action(self, state) -> list:
         state = torch.tensor(state[np.newaxis, :], dtype=torch.float).to(self.device)
@@ -104,44 +102,80 @@ class PPO:
         dones = torch.tensor(np.array(transition_dict['dones']), dtype=torch.int).view(-1, 1).to(self.device)
         truncated = torch.tensor(np.array(transition_dict['truncated']), dtype=torch.int).view(-1, 1).to(self.device)
         
-        td_target = rewards + self.gamma * self.critic(next_states) * (1 - dones | truncated)
+        # * 技巧
+        # self.train_cvae(states, next_states)  # 训练 vae, 如果是已经预训练好的就无需训练
+        # self.cvae_generate(32)  # 生成 cvae 图像观察效果
+        pre_next_state = self.predict_next_state(states, next_states)
+        target_q1 = self.critic(pre_next_state).detach()
+        target_q2 = self.critic(next_states).detach()
+        target_q = torch.min(target_q1, target_q2)
+        
+        td_target = rewards + self.gamma * target_q * (1 - dones | truncated)
         td_delta = td_target - self.critic(states)
         advantage = compute_advantage(self.gamma, self.lmbda, td_delta.cpu()).to(self.device)
         # 所谓的另一个演员就是原来的演员的初始状态
         old_log_probs = torch.log(self.actor(states).gather(1, actions)).detach()
-
-        # 因为每次更新是有限度的，不允许一次更新很远，因此需要多次更新才能达到较好效果，这样调整更精细
+        
         for _ in range(self.epochs):
             log_probs = torch.log(self.actor(states).gather(1, actions))
-            # 重要性, 本来是概率直接相除, 但是取e为底, 自然对数概率相减的幂, 结果是一样的
             ratio = torch.exp(log_probs - old_log_probs)  # 重要性采样系数
             surr1 = ratio * advantage  # 重要性采样
-            surr2 = torch.clip(ratio, 1 - self.eps, 1 + self.eps) * advantage  # 截断的重要性采样
-            # PPO损失函数，取上面两者的最小值，加负号，取均值就是损失
+            surr2 = torch.clip(ratio, 1 - self.eps, 1 + self.eps) * advantage
             actor_loss = torch.mean(-torch.min(surr1, surr2))
-            # 评论员更新目标当作标签，加.detach()不纳入计算图
             critic_loss = torch.mean(F.mse_loss(self.critic(states), td_target.detach()))
-            
             self.actor_optimizer.zero_grad()
             self.critic_optimizer.zero_grad()
             actor_loss.backward()
             critic_loss.backward()
             self.actor_optimizer.step()
             self.critic_optimizer.step()
+            
+    def train_cvae(self, state, next_state):
+        vae_action = next_state[:, :4]
+        diff_state = next_state[:, 5:] - state[:, 5:]
+        train_loss = cvae_train(self.cvae, diff_state, vae_action, self.cvae_optimizer)
+        return train_loss
+    
+    def predict_next_state(self, state, next_state):
+        action = state[:, :4]
+        with torch.no_grad():
+            sample = torch.randn(state.shape[0], 32).to(device)  # 随机采样的
+            generated = self.cvae.decode(sample, action)
+        pre_next_state = torch.concat([next_state[:, :5], state[:, 5:] + generated], dim=-1)
+        return pre_next_state
+    
+    def cvae_generate(self, batch):
+        conditions = torch.randint(0, 4, (batch,))
+        one_hot_conditions = torch.eye(4)[conditions].to(device)
+        with torch.no_grad():
+            sample = torch.randn(batch, 32).to(device)
+            generated = self.cvae.decode(sample, one_hot_conditions).cpu()
 
+        plt.figure(figsize=(10, 8))
+        plt.rcParams['font.size'] = 14
+        ax = sns.heatmap(generated)
+        ax.set_yticks(np.arange(len(conditions)) + 0.5)
+        label = [i.item() for i in conditions]
+        ax.set_yticklabels(label, rotation=0)
+        plt.xlabel('state 分量变化')
+        plt.ylabel('action')
+        plt.savefig(f'tmp/{time.time()}.pdf')
+    
 # * --------------------- 参数 -------------------------
 if __name__ == '__main__':
     # 环境相关
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     env = gym.make('sumo-rl-v0',
-                    net_file=args.net,
-                    route_file=args.flow,
-                    use_gui=False,
-                    begin_time=args.begin_time,
-                    num_seconds=args.duration,
-                    reward_fn=args.reward,
-                    sumo_seed=args.begin_seed)
-
+                net_file=args.net,
+                route_file=args.flow,
+                use_gui=False,
+                begin_time=args.begin_time,
+                num_seconds=args.duration,
+                reward_fn=args.reward,
+                sumo_seed=args.begin_seed,
+                additional_sumo_cmd='--no-step-log')
+    mission = args.model_name.split('_')[0]
+    
     # PPO相关
     actor_lr = 1e-3
     critic_lr = 1e-2
@@ -156,31 +190,36 @@ if __name__ == '__main__':
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
 
-    # 动力学模型
-    # dynamic_state_model = torch.load('data/model/MLP_dynamic_big_inter_state.pt', map_location=device)
-    # dynamic_reward_model = torch.load('data/model/MLP_dynamic_big_inter_reward.pt', map_location=device)
-    # dynamic_model = DynamicEnv(dynamic_state_model, dynamic_reward_model)
-    # dynamic_model = torch.load('data/model/Ensemble_model.pt', map_location=device)
-
+    # VAE
+    if args.cvae_kind:
+        if args.cvae_pretrain:
+            cvae = torch.load(f'model/cvae/{mission}/{args.cvae_kind}.pt', map_location=device)
+        else:
+            cvae = CVAE(state_dim, action_dim, state_dim)  # 在线训练
+    else:
+        cvae = None
+    
     # 任务相关
     system_type = sys.platform  # 操作系统
+    args.model_name = args.model_name + '~' +  args.cvae_kind + '~' + args.cvae_pretrain
     print('device:', device)
 
     # * ----------------------- 训练 ----------------------------
     for seed in range(args.begin_seed, args.end_seed + 1):
         CKP_PATH = f'ckpt/{args.model_name}/{args.net.split("/")[-1].split(".")[0]}_{seed}_{system_type}.pt'
         env = gym.make('sumo-rl-v0',
-                    net_file=args.net,
-                    route_file=args.flow,
-                    use_gui=False,
-                    begin_time=args.begin_time,
-                    num_seconds=args.duration,
-                    sumo_seed=seed,
-                    reward_fn=args.reward,)
+                net_file=args.net,
+                route_file=args.flow,
+                use_gui=False,
+                begin_time=args.begin_time,
+                num_seconds=args.duration,
+                reward_fn=args.reward,
+                sumo_seed=args.begin_seed,  # 需要切换种子
+                additional_sumo_cmd='--no-step-log')
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
-        agent = PPO(state_dim, hidden_dim, action_dim, actor_lr, 
+        agent = PPO(state_dim, hidden_dim, action_dim, cvae, actor_lr, 
                     critic_lr, gamma, lmbda, epochs, eps, device)
         (s_epoch, s_episode, return_list,  waitt_list, 
         queue_list, speed_list, time_list, seed_list) = read_ckp(CKP_PATH, agent, 'PPO')
@@ -197,10 +236,11 @@ if __name__ == '__main__':
                 "mission name": args.model_name
                 }
             )
-
+        print('开始训练')
         return_list, train_time = train_PPO_agent(env, agent, args.writer, s_epoch, total_epochs, 
                                             s_episode, args.episodes, return_list, queue_list, 
-                                            waitt_list, speed_list, time_list, seed_list, seed, CKP_PATH)
+                                            waitt_list, speed_list, time_list, seed_list, seed, CKP_PATH,
+                                            )
 
         # * ----------------- 绘图 ---------------------
 

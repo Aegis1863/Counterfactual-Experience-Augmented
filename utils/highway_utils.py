@@ -49,8 +49,8 @@ def read_ckp(ckp_path: str, agent: object, model_name: str, buffer_size: int = 0
     else:
         print('\033[34m[ checkpoint ]\033[0m 全新训练...')
         if buffer_size:
-            return 0, 0, [], [], [], [], [], [], ReplayBuffer(buffer_size)
-        return 0, 0, [], [], [], [], [], []
+            return 0, 0, [], [], [], ReplayBuffer(buffer_size)
+        return 0, 0, [], [], []
 
 
 def compute_advantage(gamma, lmbda, td_delta):
@@ -70,10 +70,12 @@ def save_plot_data(return_list, time_list, seed_list,
                    ckpt_path, seed, pool_size=None):
     system_type = sys.platform  # 操作系统标识
     # ckpt/SAC/big-intersection_42_win32.pt
-    alg_name = ckpt_path.split('/')[1]  # 在本项目路径命名中，第二个是算法名
-    if not os.path.exists(f"data/plot_data/{alg_name}/"):  # 路径不存在时创建
-        os.makedirs(f"data/plot_data/{alg_name}/")  # data/plot_data/SAC/
-    log_path = f"data/plot_data/{alg_name}/{seed}_{system_type}.csv"
+    mission_name = ckpt_path.split('/')[1]
+    alg_name = ckpt_path.split('/')[2]  # 在本项目路径命名中，第二个是算法名
+    file_path = f"data/plot_data/{mission_name}/{alg_name}"  # data/plot_data/highway/SAC/
+    if not os.path.exists(file_path):  # 路径不存在时创建
+        os.makedirs(file_path)
+    log_path = f"{file_path}/{seed}_{system_type}.csv"
     return_save = pd.DataFrame()
     return_save["Algorithm"] = [alg_name] * len(return_list)  # 算法名称
     return_save["Seed"] = seed_list
@@ -103,8 +105,7 @@ def train_PPO_agent(
     """
     start_time = time.time()
     best_score = -1e10  # 初始分数
-    if not return_list:
-        return_list = []
+    return_list = [] if not return_list else return_list
     for epoch in range(s_epoch, total_epochs):
         for episode in range(s_episode, total_episodes):
             episode_begin_time = time.time()
@@ -150,12 +151,14 @@ def train_PPO_agent(
             save_PPO_data(writer, return_list, time_list, seed_list, 
                           ckpt_path, epoch, episode, best_weight, seed)
             # 记录时间
-            episode_time = (time.time() - episode_begin_time) / 60
-            # 打印回合信息
-            print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %.2f min ]\033[0m: return: %d'
-                  % (seed, episode+1, total_episodes, episode_time, episode_return))
+            if episode % 10 == 0:
+                # 打印回合信息
+                duration_time = (time.time() - episode_begin_time) / 6
+                print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %.2f min ]\033[0m: return: %d'
+                  % (seed, episode+1, total_episodes, duration_time, np.mean(return_list[-10:])))
 
             s_episode = 0
+    env.close()
     agent.actor.load_state_dict(actor_best_weight)
     agent.critic.load_state_dict(critic_best_weight)
     total_time = time.time() - start_time
@@ -181,6 +184,8 @@ def save_PPO_data(writer, return_list, time_list, seed_list,
                 "actor_best_weight": actor_best_weight,
                 "critic_best_weight": critic_best_weight,
                 "return_list": return_list,
+                "time_list": time_list,
+                "seed_list": seed_list,
             },
             ckpt_path,
         )

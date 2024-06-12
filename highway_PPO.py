@@ -26,7 +26,7 @@ parser.add_argument('--model_name', default="highway_PPO", type=str, help='模�
 parser.add_argument('--cvae_kind', default=None, type=str, help='是否利用vae辅助，"expert"或"regular"')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
-parser.add_argument('-e', '--episodes', default=150, type=int, help='运行回合数')
+parser.add_argument('-e', '--episodes', default=200, type=int, help='运行回合数')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=42, type=int, help='结束种子')
 args = parser.parse_args()
@@ -67,7 +67,7 @@ class PPO:
         state_dim: int,
         hidden_dim: int,
         action_dim: int,
-        cave: object=None,
+        cvae: object=None,
         actor_lr: float=1e-4,
         critic_lr: float=5e-3,
         gamma: float=0.9,
@@ -87,7 +87,7 @@ class PPO:
         self.eps = eps  # PPO中截断范围的参数
         self.device = device
         if cvae:
-            self.cvae = cave.to(device)
+            self.cvae = cvae.to(device)
             self.cvae_optimizer = torch.optim.Adam(self.cvae.parameters(), lr=1e-3)
         else:
             self.cvae = None
@@ -156,46 +156,48 @@ class PPO:
 # * --------------------- 参数 -------------------------
 if __name__ == '__main__':
     # 环境相关
+    mission = args.model_name.split('_')[0]
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    # env = gym.make('highway-fast-v0')
-    env = gym.make("highway-v0", render_mode='rgb_array')
+    env = gym.make('highway-fast-v0')
+    # env = gym.make("highway-v0", render_mode='human')
     
     # PPO相关
-    actor_lr = 1e-4
+    actor_lr = 5e-4
     critic_lr = 1e-3
     lmbda = 0.95  # 似乎可以去掉，这一项仅用于调整计算优势advantage时，额外调整折算奖励的系数
     gamma = 0.98  # 时序差分学习率，也作为折算奖励的系数之一
     total_epochs = 1  # 迭代轮数
-    eps = 0.2  # 截断范围参数, 1-eps ~ 1+eps
-    epochs = 10  # PPO中一条序列训练多少轮，和迭代算法无关
+    eps = 0.15  # 截断范围参数, 1-eps ~ 1+eps
+    epochs = 20  # PPO中一条序列训练多少轮，和迭代算法无关
 
     # 神经网络相关
-    hidden_dim = 128
+    hidden_dim = 64
     state_dim = torch.multiply(*env.observation_space.shape)
     action_dim = env.action_space.n
 
     # VAE
-    
-    # cvae = CVAE(32, action_dim, 32)  # 在线训练
-    # 需要预训练
-    cvae = torch.load(f'model/cvae/{args.cvae_kind}.pt', map_location=device) if args.cvae_kind else None  
+    if args.cvae_kind:
+        if args.cvae_pretrain:
+            cvae = torch.load(f'model/cvae/{mission}/{args.cvae_kind}.pt', map_location=device)
+        else:
+            cvae = CVAE(state_dim, action_dim, state_dim)  # 在线训练
+    else:
+        cvae = None  
 
     # 任务相关
     system_type = sys.platform  # 操作系统
+    args.model_name = args.model_name + '~' +  args.cvae_kind
     print('device:', device)
 
     # * ----------------------- 训练 ----------------------------
     for seed in range(args.begin_seed, args.end_seed + 1):
         CKP_PATH = f'ckpt/{"/".join(args.model_name.split('_'))}/{seed}/{system_type}.pt'
-        # env = gym.make('highway-fast-v0')
-        env = gym.make("highway-v0", render_mode='rgb_array')
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
         agent = PPO(state_dim, hidden_dim, action_dim, cvae, actor_lr, 
                     critic_lr, gamma, lmbda, epochs, eps, device)
-        (s_epoch, s_episode, return_list,  waitt_list, 
-        queue_list, speed_list, time_list, seed_list) = read_ckp(CKP_PATH, agent, 'PPO')
+        s_epoch, s_episode, return_list, time_list, seed_list = read_ckp(CKP_PATH, agent, 'PPO')
 
         if args.writer > 1:
             wandb.init(
@@ -218,8 +220,8 @@ if __name__ == '__main__':
         # * ----------------- 绘图 ---------------------
 
         sns.lineplot(return_list, label=f'{seed}')
-    plt.title(f'{args.model_name}, training time: {train_time} min')
-    plt.xlabel('Episode')
-    plt.ylabel('Return')
-    plt.savefig(f'image/train_{args.model_name}_{seed}_{system_type}.pdf')
-    plt.close()
+        plt.title(f'{args.model_name}, training time: {train_time} min')
+        plt.xlabel('Episode')
+        plt.ylabel('Return')
+        plt.savefig(f'image/train_{args.model_name}_{system_type}.pdf')
+        plt.close()
