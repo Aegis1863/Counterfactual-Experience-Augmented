@@ -314,7 +314,8 @@ def train_DQN(
         time_list: list,
         seed_list: list,
         seed: int,
-        ckpt_path: str):
+        ckpt_path: str,
+        model_name: str):
     start_time = time.time()
     best_score = -100  # 初始化最佳分数
     return_list = []
@@ -335,12 +336,15 @@ def train_DQN(
                 state = next_state
                 episode_return += reward
                 if replay_buffer.size() > minimal_size:
-                    if agent.cvae:
-                        if not agent.cvae_pretrain and agent.cvae.quality < 0.7:  # 在线训练
-                            vae_sample = replay_buffer.sample(480)
-                            agent.train_cvae(vae_sample[0], vae_sample[2], batch_size=16)  # 训练 vae, 如果是已经预训练好的就无需训练
-                            agent.cvae.generate_test(16, 4, save_path='imgae/highway_vae/DQN/')  # 生成 cvae 图像观察效果
-                        # TODO 增加cvae经验增广
+                    if agent.sta:
+                        if agent.sta.quality < 0.7:  # 在线训练
+                            vae_sample = replay_buffer.return_all_samples()
+                            vae_batch = vae_sample[0].shape[0] // 600
+                            agent.train_cvae(vae_sample[0], vae_sample[3], vae_batch)  # 训练 vae
+                            agent.sta.generate_test(32, 4, save_path=f'imgae/highway/{model_name}/')
+                        if agent.sta.quality > 0.2:
+                            replay_buffer = exp_expand(replay_buffer, agent.sta, batch_size)  # 经验增广
+                        
                     b_s, b_a, b_r, b_ns, b_d, b_t = replay_buffer.sample(batch_size)
                     transition_dict = {
                         'states': b_s, 'actions': b_a, 'next_states': b_ns,
@@ -375,7 +379,7 @@ def save_DQN_data(writer, replay_buffer, return_list, time_list,
                   seed_list, ckpt_path, epoch, episode, epsilon,
                   best_weight, seed):
     # wandb 存档
-    if writer:
+    if writer > 1:
         wandb.log({
             "_return_list": return_list[-1],
             "pool_size": replay_buffer.size(),
@@ -420,3 +424,9 @@ class ReplayBuffer:
         all_transitions = list(self.buffer)
         state, action, reward, next_state, done, truncated = zip(*all_transitions)
         return np.array(state), action, reward, np.array(next_state), done, truncated
+    
+    
+def exp_expand(replay_buffer, sta, batch_size):
+    b_s, b_a, b_r, b_ns, b_d, b_t = replay_buffer.sample(batch_size)
+    
+    pass

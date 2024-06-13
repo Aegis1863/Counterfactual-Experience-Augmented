@@ -70,7 +70,7 @@ class PPO:
         state_dim: int,
         hidden_dim: int,
         action_dim: int,
-        cvae: object,
+        sta: object,
         actor_lr: float=1e-4,
         critic_lr: float=5e-3,
         gamma: float=0.9,
@@ -89,11 +89,11 @@ class PPO:
         self.epochs = epochs  # 一条序列的数据用来训练轮数
         self.eps = eps  # PPO中截断范围的参数
         self.device = device
-        if cvae:
-            self.cvae = cvae.to(device)
-            self.cvae_optimizer = torch.optim.Adam(self.cvae.parameters(), lr=1e-3)
+        if sta:
+            self.sta = cvae.to(device)
+            self.sta_optimizer = torch.optim.Adam(self.sta.parameters(), lr=1e-3)
         else:
-            self.cvae = None
+            self.sta = None
 
     def take_action(self, state) -> list:
         state = torch.tensor(state[np.newaxis, :], dtype=torch.float).to(self.device)
@@ -111,10 +111,10 @@ class PPO:
         truncated = torch.tensor(np.array(transition_dict['truncated']), dtype=torch.int).view(-1, 1).to(self.device)
         
         # * 技巧
-        if args.sta and self.cvae.quality < 0.7:  # 在线训练
+        if args.sta and self.sta.quality < 0.7:  # 在线训练
             loss = self.train_cvae(states, next_states, False, batch_size=1)  # 训练 vae, 如果数据比较少则batch_size一定要小
-            self.cvae.generate_test(32, 4, save_path=f'image/{mission}/train_vae_{model_name}/')  # 生成 cvae 图像观察效果
-        if self.cvae and self.cvae.quality > 0.3:
+            self.sta.generate_test(32, 4, save_path=f'image/{mission}/{args.model_name}/')  # 生成 cvae 图像观察效果
+        if self.sta and self.sta.quality > 0.3:
             pre_next_state = self.predict_next_state(states, next_states)
             target_q1 = self.critic(pre_next_state).detach()
             target_q2 = self.critic(next_states).detach()
@@ -145,14 +145,14 @@ class PPO:
     def train_cvae(self, state, next_state, test_and_feedback, batch_size):
         vae_action = next_state[:, :4]
         diff_state = next_state[:, 5:] - state[:, 5:]
-        loss = cvae_train(self.cvae, self.device, diff_state, vae_action, self.cvae_optimizer, test_and_feedback, batch_size)
+        loss = cvae_train(self.sta, self.device, diff_state, vae_action, self.sta_optimizer, test_and_feedback, batch_size)
         return loss
     
     def predict_next_state(self, state, next_state):
         action = state[:, :4]
         with torch.no_grad():
             sample = torch.randn(state.shape[0], 32).to(device)  # 随机采样的
-            generated = self.cvae.decode(sample, action)
+            generated = self.sta.decode(sample, action)
         pre_next_state = torch.concat([next_state[:, :5], state[:, 5:] + generated], dim=-1)
         return pre_next_state
     

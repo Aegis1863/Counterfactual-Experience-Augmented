@@ -19,6 +19,7 @@ class CVAE(nn.Module):
         self.fc3 = nn.Linear(latent_dim + condition_dim, 128)
         self.fc4 = nn.Linear(128, input_dim)
         self.latent_dim = latent_dim
+        self.condition_dim = condition_dim  # 就是动作空间
         self.quality = 0  # 轮廓系数
         self.pic_num = 0
 
@@ -38,6 +39,7 @@ class CVAE(nn.Module):
     def forward(self, x, c):
         mu, logvar = self.encode(x, c)
         z = self.reparameterize(mu, logvar)
+        self.quality = self.generate_test(32, self.condition_dim)  # 轮廓系数
         return self.decode(z, c), mu, logvar
     
     def generate_test(self, batch, action_space, save_path=None):
@@ -127,8 +129,8 @@ def cvae_train(model, device, diff_state, action, optimizer, test_and_feedback=F
 
 if __name__ == '__main__':
     mission = 'sumo'  # ! 任务
-    state, kind = torch.load('data/dataset/Buffer_of_RDQN.pt'), 'expert'  # ! 专家数据, 比较少
-    # state, kind = torch.load('data/dataset/Buffer_of_regular.pt'), 'regular'  # ! 业余数据, 比较多
+    state, kind = torch.load('data/dataset/Buffer_of_expert.pt'), 'expert'  # ! 专家数据, 10000
+    # state, kind = torch.load('data/dataset/Buffer_of_regular.pt'), 'regular'  # ! 业余数据, 240000
 
     action = state[1:, :4]
     diff_state = state[1:, 5:] - state[:-1, 5:]

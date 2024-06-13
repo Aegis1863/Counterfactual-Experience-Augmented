@@ -19,19 +19,18 @@ import warnings
 warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='DQN 任务')
-parser.add_argument('--model_name', default="highway_DQN", type=str, help='模型名称, 任务_模型')
-parser.add_argument('--cvae_kind', default='', type=str, help='是否利用vae辅助，"expert"或"regular"')
-parser.add_argument('--cvae_pretrain', default=True, type=bool, help='cvae 是否已经预训练')
-parser.add_argument('-w', '--writer', action="store_true", help='是否wandb存档')
+parser.add_argument('--model_name', default="highway_DQN~test", type=str, help='模型名称, 任务_模型')
+parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
+parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
+parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
 parser.add_argument('-e', '--episodes', default=100, type=int, help='运行回合数')
-parser.add_argument('--duration', default=2000, type=int, help='单回合运行时间')
 parser.add_argument('-b', '--buffer_size', default=20000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=42, type=int, help='结束种子')
 args = parser.parse_args()
 
-if args.writer and not args.online:
+if args.writer == 2:
     if os.path.exists("api_key.txt"):
         with open("api_key.txt", "r") as f:  # 该文件中写入一行wandb的API
             api_key = f.read()
@@ -57,19 +56,17 @@ class DQN:
     ''' DQN算法,包括Double DQN '''
     
     def __init__(self, state_dim, hidden_dim, action_dim, learning_rate,
-                 gamma, epsilon, update_interval, cvae, device,):
+                 gamma, epsilon, update_interval, sta, device,):
         
         self.action_dim = action_dim
-        
         self.q_net = VAnet(state_dim, hidden_dim, self.action_dim).to(device)
         self.target_q_net = VAnet(state_dim, hidden_dim, self.action_dim).to(device)
-            
         self.optimizer = torch.optim.Adam(self.q_net.parameters(), lr=learning_rate)
         self.gamma = gamma
         self.epsilon = epsilon
         self.update_interval = update_interval
-        self.cvae = cvae
-        self.cvae_pretrain = args.cvae_pretrain
+        self.sta = sta
+        self.sta = args.sta_kind
         self.count = 0
         self.device = device
 
@@ -94,15 +91,13 @@ class DQN:
         truncated = torch.tensor(transition_dict['truncated'], dtype=torch.int).view(-1, 1).to(self.device)
 
         q_values = self.q_net(states).gather(1, actions)  # Q值
-    
         max_action = self.q_net(next_states).max(1)[1].view(-1, 1)
-        max_next_q_values = self.target_q_net(next_states).gather(1, max_action)
         
         # * 技巧一
-        if self.cvae:
+        if self.sta and self.sta.quality > 0.3:
             pre_next_state = self.predict_next_state(states, next_states)
-            target_q1 = self.target_q_net(pre_next_state).gather(1, max_action)
-            target_q2 = self.target_q_net(next_states).gather(1, max_action)
+            target_q1 = self.target_q_net(pre_next_state).detach()
+            target_q2 = self.target_q_net(next_states).detach()
             max_next_q_values = torch.min(target_q1, target_q2)
         else:
             max_next_q_values = self.target_q_net(next_states).gather(1, max_action)
@@ -117,17 +112,17 @@ class DQN:
             self.target_q_net.load_state_dict(self.q_net.state_dict())  # 更新目标网络
         self.count += 1
     
-    def train_cvae(self, state, next_state, batch_size=16):
+    def train_cvae(self, state, next_state, test_and_feedback, batch_size):
         vae_action = next_state[:, :4]
         diff_state = next_state[:, 5:] - state[:, 5:]
-        train_loss = cvae_train(self.cvae, diff_state, vae_action, self.cvae_optimizer, batch_size)
-        return train_loss
+        loss = cvae_train(self.sta, self.device, diff_state, vae_action, self.sta_optimizer, test_and_feedback, batch_size)
+        return loss
     
     def predict_next_state(self, state, next_state):
         action = state[:, :4]
         with torch.no_grad():
             sample = torch.randn(state.shape[0], 32).to(device)  # 随机采样的
-            generated = self.cvae.decode(sample, action)
+            generated = self.sta.decode(sample, action)
         pre_next_state = torch.concat([next_state[:, :5], state[:, 5:] + generated], dim=-1)
         return pre_next_state
     
@@ -138,6 +133,7 @@ if __name__ == '__main__':
     env = gym.make('highway-fast-v0')
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     mission = args.model_name.split('_')[0]
+    model_name = args.model_name.split('_')[1]
     
     # DQN相关
     total_epoch = 1  # 迭代数, 无需多次迭代
@@ -154,17 +150,20 @@ if __name__ == '__main__':
     action_dim = env.action_space.n
 
     # VAE
-    if args.cvae_kind:
-        if args.cvae_pretrain:
-            cvae = torch.load(f'model/cvae/{mission}/{args.cvae_kind}.pt', map_location=device)
+    if args.sta:
+        args.model_name = args.model_name + '~' + 'cvae'
+        if args.sta_kind and args.sta:  # 读取预训练模型
+            print(f'==> 读取{args.sta_kind} cvae模型')
+            args.model_name = args.model_name + '~' + args.sta_kind
+            cvae = torch.load(f'model/cvae/{mission}/{args.sta_kind}.pt', map_location=device)
         else:
-            cvae = CVAE(state_dim, action_dim, state_dim)  # 在线训练
+            print(f'==> 在线训练 cvae模型')
+            cvae = CVAE(state_dim - 5, action_dim, state_dim - 5)  # 在线训练, sumo状态维度要减去5，前五个没有帮助
     else:
         cvae = None
 
     # 任务相关
     system_type = sys.platform  # 操作系统
-    args.model_name = args.model_name + '~' +  args.cvae_kind + '~' + args.cvae_pretrain
     print('device:', device)
 
     # * ----------------------- 训练 ----------------------------
@@ -181,7 +180,7 @@ if __name__ == '__main__':
                                                             args.model_name, 
                                                             args.buffer_size)
 
-        if args.writer:
+        if args.writer > 1:
             wandb.init(
                 project="MBPO-SUMO",
                 group=args.model_name,
@@ -189,14 +188,13 @@ if __name__ == '__main__':
                 config={
                 "episodes": args.episodes,
                 "seed": seed,
-                "road net": args.net,
                 "mission name": args.model_name
                 }
             )
         
         return_list, train_time = train_DQN(env, agent, args.writer, s_epoch, total_epoch, s_episode,
                                             args.episodes, replay_buffer, minimal_size, 
-                                            batch_size, return_list, time_list, seed_list, seed, CKP_PATH)
+                                            batch_size, return_list, time_list, seed_list, seed, CKP_PATH, args.model_name)
 
         # * ----------------------- 绘图 ----------------------------
 
@@ -204,5 +202,5 @@ if __name__ == '__main__':
         plt.title(f'{args.model_name}, training time: {train_time} min')
         plt.xlabel('Episode')
         plt.ylabel('Return')
-        plt.savefig(f'image/tmp/train_{args.model_name}_{system_type}.pdf')
+        plt.savefig(f'image/tmp/{mission}_{args.model_name}_{system_type}.pdf')
         plt.close()
