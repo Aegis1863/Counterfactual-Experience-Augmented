@@ -117,9 +117,6 @@ def train_PPO_agent(
     seed: int,
     ckpt_path: str,
     dynamic_model: object = None,
-    baseline: int= -1000,
-    # roll_size: int = 2,
-    # roll_step: int = 10,
 ):
     """
     同策略, 没有经验池, 仅限演员评论员框架
@@ -144,12 +141,6 @@ def train_PPO_agent(
             while not (done | truncated):
                 action = agent.take_action(state)
                 next_state, reward, done, truncated, info = env.step(action)
-                if dynamic_model and best_score < baseline:
-                    mpc_action, pre_reward = mpc(dynamic_model, state, 2, give_reward=True)
-                    if mpc_action == action:
-                        reward += abs(pre_reward)
-                    else:
-                        reward += pre_reward
                 transition_dict["states"].append(state)
                 transition_dict["actions"].append(action)
                 transition_dict["next_states"].append(next_state)
@@ -158,6 +149,7 @@ def train_PPO_agent(
                 transition_dict["truncated"].append(truncated)
                 state = next_state
                 episode_return += reward
+            env.close()
             # 记录
             return_list.append(episode_return)
             wait_time_list.append(info["system_total_waiting_time"])
@@ -180,9 +172,9 @@ def train_PPO_agent(
             save_PPO_data(writer, return_list, queue_list, wait_time_list, speed_list,
                           time_list, seed_list, ckpt_path, epoch, episode, best_weight, seed)
             # 记录时间
-            episode_time = (time.time() - episode_begin_time) // 60
+            episode_time = (time.time() - episode_begin_time) / 60
             # 打印回合信息
-            print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %d min ]\033[0m: return: %d, total waitting: %d'
+            print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %.2f min ]\033[0m: return: %d, total waitting: %d'
                   % (seed, episode+1, total_episodes, episode_time, episode_return, info['system_total_waiting_time']))
 
             s_episode = 0
@@ -322,6 +314,7 @@ def train_SAC_agent(
                     }
                     agent.update(transition_dict)
                 step += 1
+            env.close()
             return_list.append(episode_return)
             wait_time_list.append(info["system_total_waiting_time"])
             queue_list.append(info["system_total_stopped"])
@@ -346,7 +339,6 @@ def train_SAC_agent(
             print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %d min ]\033[0m: return: %d, total waitting: %d'
                   % (seed, episode+1, total_episodes, episode_time, episode_return, info['system_total_waiting_time']))
         s_episode = 0
-    env.close()
     agent.actor.load_state_dict(actor_best_weight)
     agent.critic_1.load_state_dict(critic_1_best_weight)
     agent.critic_2.load_state_dict(critic_2_best_weight)
@@ -458,7 +450,7 @@ def train_DQN(
                 if episode_return > best_score:
                     best_weight = agent.q_net.state_dict()
                     best_score = episode_return
-
+            env.close()
             return_list.append(episode_return)
             wait_time_list.append(info["system_total_waiting_time"])
             queue_list.append(info["system_total_stopped"])
@@ -475,7 +467,7 @@ def train_DQN(
             print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %d min ]\033[0m: return: %d, total waitting: %d'
                   % (seed, episode+1, total_episodes, episode_time, episode_return, info['system_total_waiting_time']))
             s_episode = 0
-    env.close()
+    
     agent.q_net.load_state_dict(best_weight)  # 应用最佳权重
     total_time = (time.time() - start_time) // 60
     print("\033[32m[ 总耗时 ]\033[0m %d分钟" % total_time)
