@@ -50,10 +50,11 @@ class CVAE(nn.Module):
         '''
         
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        if isinstance(action_space, int):
+        if not isinstance(action_space, list):
+            action_space = int(action_space)
             conditions = torch.tensor([[i] * (batch // action_space) for i in range(action_space)]).view(-1)
             one_hot_conditions = torch.eye(action_space)[conditions].to(device)
-        elif isinstance(action_space, list):  # TODO 连续动作空间需要测试
+        else:  # TODO 连续动作空间需要测试
             conditions = torch.FloatTensor(batch//4).uniform_(*action_space).repeat(4).sort()[0]
         with torch.no_grad():
             sample = torch.randn(batch, self.latent_dim).to(device)
