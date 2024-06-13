@@ -9,7 +9,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from utils.sumo_utils import train_PPO_agent, compute_advantage, read_ckp, CVAE, cvae_train
+from utils.sumo_utils import train_PPO_agent, compute_advantage, read_ckp
+from utils.cvae import CVAE, cvae_train
 # from dynamic_model.train_Ensemble_dynamic_model import *
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -103,13 +104,17 @@ class PPO:
         truncated = torch.tensor(np.array(transition_dict['truncated']), dtype=torch.int).view(-1, 1).to(self.device)
         
         # * 技巧
-        # self.train_cvae(states, next_states)  # 训练 vae, 如果是已经预训练好的就无需训练
-        # self.cvae_generate(32)  # 生成 cvae 图像观察效果
-        pre_next_state = self.predict_next_state(states, next_states)
-        target_q1 = self.critic(pre_next_state).detach()
-        target_q2 = self.critic(next_states).detach()
-        target_q = torch.min(target_q1, target_q2)
-        
+        if not args.cvae_pretrain:  # 在线训练
+            self.train_cvae(states, next_states)  # 训练 vae, 如果是已经预训练好的就无需训练
+            self.cvae.generate_test(16, 4, save_path='imgae/sumo_vae/')  # 生成 cvae 图像观察效果
+        if self.cvae:
+            pre_next_state = self.predict_next_state(states, next_states)
+            target_q1 = self.critic(pre_next_state).detach()
+            target_q2 = self.critic(next_states).detach()
+            target_q = torch.min(target_q1, target_q2)
+        else:
+            target_q = self.critic(next_states).detach()
+            
         td_target = rewards + self.gamma * target_q * (1 - dones | truncated)
         td_delta = td_target - self.critic(states)
         advantage = compute_advantage(self.gamma, self.lmbda, td_delta.cpu()).to(self.device)
@@ -144,22 +149,6 @@ class PPO:
         pre_next_state = torch.concat([next_state[:, :5], state[:, 5:] + generated], dim=-1)
         return pre_next_state
     
-    def cvae_generate(self, batch):
-        conditions = torch.randint(0, 4, (batch,))
-        one_hot_conditions = torch.eye(4)[conditions].to(device)
-        with torch.no_grad():
-            sample = torch.randn(batch, 32).to(device)
-            generated = self.cvae.decode(sample, one_hot_conditions).cpu()
-
-        plt.figure(figsize=(10, 8))
-        plt.rcParams['font.size'] = 14
-        ax = sns.heatmap(generated)
-        ax.set_yticks(np.arange(len(conditions)) + 0.5)
-        label = [i.item() for i in conditions]
-        ax.set_yticklabels(label, rotation=0)
-        plt.xlabel('state 分量变化')
-        plt.ylabel('action')
-        plt.savefig(f'tmp/{time.time()}.pdf')
     
 # * --------------------- 参数 -------------------------
 if __name__ == '__main__':
@@ -192,7 +181,7 @@ if __name__ == '__main__':
 
     # VAE
     if args.cvae_kind:
-        if args.cvae_pretrain:
+        if args.cvae_pretrain:  # 读取预训练模型
             cvae = torch.load(f'model/cvae/{mission}/{args.cvae_kind}.pt', map_location=device)
         else:
             cvae = CVAE(state_dim, action_dim, state_dim)  # 在线训练
