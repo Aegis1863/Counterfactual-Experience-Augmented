@@ -81,11 +81,12 @@ def save_plot_data(return_list, queue_list, wait_time_list,
                    speed_list, time_list, seed_list, 
                    ckpt_path, seed, pool_size=None):
     system_type = sys.platform  # 操作系统标识
-    # ckpt/SAC/big-intersection_42_win32.pt
-    alg_name = ckpt_path.split('/')[1]  # 在本项目路径命名中，第二个是算法名
-    if not os.path.exists(f"data/plot_data/{alg_name}/"):  # 路径不存在时创建
-        os.makedirs(f"data/plot_data/{alg_name}/")  # data/plot_data/SAC/
-    log_path = f"data/plot_data/{alg_name}/{seed}_{system_type}.csv"
+    # 'ckpt/sumo/PPO~cvae/42_win32.pt'
+    mission_name = ckpt_path.split('/')[1]
+    alg_name = ckpt_path.split('/')[2]
+    if not os.path.exists(f"data/plot_data/{mission_name}/{alg_name}/"):  # 路径不存在时创建
+        os.makedirs(f"data/plot_data{mission_name}/{alg_name}/")  # data/plot_data/sumo/PPO/
+    log_path = f"data/plot_data/{mission_name}/{alg_name}/{seed}_{system_type}.csv"
     return_save = pd.DataFrame()
     return_save["Algorithm"] = [alg_name] * len(return_list)  # 算法名称
     return_save["Seed"] = seed_list
