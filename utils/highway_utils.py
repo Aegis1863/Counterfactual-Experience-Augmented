@@ -361,10 +361,10 @@ def train_DQN(
             save_DQN_data(writer, replay_buffer, return_list, time_list, 
                           seed_list, ckpt_path, epoch, episode, agent.epsilon,
                           best_weight, seed)
-            if episode % 10 == 0:
+            if episode % 40 == 0:
                 episode_time = (time.time() - episode_begin_time) // 6
                 print('\033[32m[ %d, <%d/%d>, %.2f min ]\033[0m: return: %.2f, epsilon: %.2f, pool_size: %d'
-                    % (seed, episode+1, total_episodes, episode_time, np.mean(return_list[-10:]), agent.epsilon, replay_buffer.size()))
+                    % (seed, episode+1, total_episodes, episode_time, np.mean(return_list[-40:]), agent.epsilon, replay_buffer.size()))
             s_episode = 0
     env.close()
     agent.q_net.load_state_dict(best_weight)  # 应用最佳权重
