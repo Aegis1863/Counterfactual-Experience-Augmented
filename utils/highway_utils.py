@@ -154,7 +154,7 @@ def train_PPO_agent(
             if episode % 10 == 0:
                 # 打印回合信息
                 duration_time = (time.time() - episode_begin_time) / 6
-                print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %.2f min ]\033[0m: return: %d'
+                print('\033[32m[ %d, <%d/%d>, %.2f min ]\033[0m: return: %d'
                   % (seed, episode+1, total_episodes, duration_time, np.mean(return_list[-10:])))
 
             s_episode = 0
@@ -259,7 +259,7 @@ def train_SAC_agent(
                 save_SAC_data(writer, replay_buffer, return_list,
                               time_list, seed_list, ckpt_path, epoch, episode, best_weight, seed)
             episode_time = (time.time() - episode_begin_time) // 60
-            print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %.2f min ]\033[0m: return: %d'
+            print('\033[32m[ %d, <%d/%d>, %.2f min ]\033[0m: return: %d'
                   % (seed, episode+1, total_episodes, episode_time, episode_return))
         s_episode = 0
     env.close()
@@ -319,19 +319,16 @@ def train_DQN(
     start_time = time.time()
     best_score = -100  # 初始化最佳分数
     return_list = []
-    max_q_value_list = []
-    max_q_value = 0
     for epoch in range(s_epoch, total_epoch):
         for episode in range(s_episode, total_episodes):
             episode_begin_time = time.time()
             episode_return = 0
             state, done, truncated = env.reset()[0], False, False
+            state = state.reshape(-1)
             while not done | truncated:
                 action = agent.take_action(state)
-                max_q_value = agent.max_q_value(state) * 0.005 + max_q_value * 0.995  # 平滑处理, 主要保留前一状态
-                max_q_value_list.append(max_q_value)  # 保存每个状态的最大Q值
                 next_state, reward, done, truncated, info = env.step(action)
-
+                next_state = next_state.reshape(-1)
                 replay_buffer.add(state, action, reward, next_state, done, truncated)
                 state = next_state
                 episode_return += reward
@@ -340,7 +337,7 @@ def train_DQN(
                         if agent.sta.quality < 0.7:  # 在线训练
                             vae_sample = replay_buffer.return_all_samples()
                             vae_batch = vae_sample[0].shape[0] // 600
-                            agent.train_cvae(vae_sample[0], vae_sample[3], vae_batch)  # 训练 vae
+                            agent.train_cvae(vae_sample[0], vae_sample[1], vae_sample[3], True, vae_batch)  # 训练 vae
                             agent.sta.generate_test(32, 4, save_path=f'imgae/highway/{model_name}/')
                         if agent.sta.quality > 0.2:
                             replay_buffer = exp_expand(replay_buffer, agent.sta, batch_size)  # 经验增广
@@ -359,14 +356,15 @@ def train_DQN(
             time_list.append(time.strftime('%m-%d %H:%M:%S', time.localtime()))
             seed_list.append(seed)
             # 调整epsilon
-            agent.epsilon = max(1 - epoch / (total_epoch / 3), 0.01)
+            agent.epsilon = max(1 - episode / (total_episodes / 1.5), 0.01)
             # 保存检查点
             save_DQN_data(writer, replay_buffer, return_list, time_list, 
                           seed_list, ckpt_path, epoch, episode, agent.epsilon,
                           best_weight, seed)
-            episode_time = (time.time() - episode_begin_time) // 60
-            print('\033[32m[ Seed %d, episode <%d/%d>, time spent: %.2f min ]\033[0m: return: %d'
-                  % (seed, episode+1, total_episodes, episode_time, episode_return))
+            if episode % 10 == 0:
+                episode_time = (time.time() - episode_begin_time) // 6
+                print('\033[32m[ %d, <%d/%d>, %.2f min ]\033[0m: return: %.2f, epsilon: %.2f, pool_size: %d'
+                    % (seed, episode+1, total_episodes, episode_time, np.mean(return_list[-10:]), agent.epsilon, replay_buffer.size()))
             s_episode = 0
     env.close()
     agent.q_net.load_state_dict(best_weight)  # 应用最佳权重

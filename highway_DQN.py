@@ -24,8 +24,8 @@ parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
-parser.add_argument('-e', '--episodes', default=100, type=int, help='运行回合数')
-parser.add_argument('-b', '--buffer_size', default=20000, type=int, help='经验池大小')
+parser.add_argument('-e', '--episodes', default=2000, type=int, help='运行回合数')
+parser.add_argument('-b', '--buffer_size', default=40000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=42, type=int, help='结束种子')
 args = parser.parse_args()
@@ -95,7 +95,7 @@ class DQN:
         
         # * 技巧一
         if self.sta and self.sta.quality > 0.3:
-            pre_next_state = self.predict_next_state(states, next_states)
+            pre_next_state = self.predict_next_state(states, actions, next_states)
             target_q1 = self.target_q_net(pre_next_state).detach()
             target_q2 = self.target_q_net(next_states).detach()
             max_next_q_values = torch.min(target_q1, target_q2)
@@ -112,18 +112,17 @@ class DQN:
             self.target_q_net.load_state_dict(self.q_net.state_dict())  # 更新目标网络
         self.count += 1
     
-    def train_cvae(self, state, next_state, test_and_feedback, batch_size):
-        vae_action = next_state[:, :4]
-        diff_state = next_state[:, 5:] - state[:, 5:]
+    def train_cvae(self, state, action, next_state, test_and_feedback, batch_size):
+        vae_action = action
+        diff_state = next_state - state
         loss = cvae_train(self.sta, self.device, diff_state, vae_action, self.sta_optimizer, test_and_feedback, batch_size)
         return loss
     
-    def predict_next_state(self, state, next_state):
-        action = state[:, :4]
+    def predict_next_state(self, state, action, next_state):
         with torch.no_grad():
             sample = torch.randn(state.shape[0], 32).to(device)  # 随机采样的
             generated = self.sta.decode(sample, action)
-        pre_next_state = torch.concat([next_state[:, :5], state[:, 5:] + generated], dim=-1)
+        pre_next_state = torch.concat([next_state, state + generated], dim=-1)
         return pre_next_state
     
 
@@ -131,6 +130,14 @@ if __name__ == '__main__':
     # * --------------------- 参数 -------------------------
     # 环境相关
     env = gym.make('highway-fast-v0')
+    env.configure({
+        "lanes_count": 3,
+        "vehicles_density": 2,
+        "duration": 100,
+        "collision_reward": -30,
+        "right_lane_reward": 0,
+        "high_speed_reward": 1,
+    })
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     mission = args.model_name.split('_')[0]
     model_name = args.model_name.split('_')[1]
@@ -140,13 +147,13 @@ if __name__ == '__main__':
     gamma = 0.98
     epsilon = 1  # 刚开始随机动作,更新中线性降低
     update_interval = 50  # 若干回合更新一次目标网络
-    minimal_size = 1000  # 最小经验数
-    batch_size = 128
+    minimal_size = 500  # 最小经验数
+    batch_size = 512
 
     # 神经网络相关
     lr = 2e-3
-    state_dim = env.observation_space.shape[0]
-    hidden_dim = 128
+    state_dim = torch.multiply(*env.observation_space.shape)
+    hidden_dim = 256
     action_dim = env.action_space.n
 
     # VAE
@@ -158,7 +165,7 @@ if __name__ == '__main__':
             cvae = torch.load(f'model/cvae/{mission}/{args.sta_kind}.pt', map_location=device)
         else:
             print(f'==> 在线训练 cvae模型')
-            cvae = CVAE(state_dim - 5, action_dim, state_dim - 5)  # 在线训练, sumo状态维度要减去5，前五个没有帮助
+            cvae = CVAE(state_dim, action_dim, state_dim)  # 在线训练
     else:
         cvae = None
 
@@ -176,9 +183,7 @@ if __name__ == '__main__':
         agent = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon, update_interval, cvae, device)
 
         (s_epoch, s_episode, return_list, 
-        time_list, seed_list, replay_buffer) = read_ckp(CKP_PATH, agent, 
-                                                            args.model_name, 
-                                                            args.buffer_size)
+        time_list, seed_list, replay_buffer) = read_ckp(CKP_PATH, agent,  args.model_name,  args.buffer_size)
 
         if args.writer > 1:
             wandb.init(
@@ -194,7 +199,8 @@ if __name__ == '__main__':
         
         return_list, train_time = train_DQN(env, agent, args.writer, s_epoch, total_epoch, s_episode,
                                             args.episodes, replay_buffer, minimal_size, 
-                                            batch_size, return_list, time_list, seed_list, seed, CKP_PATH, args.model_name)
+                                            batch_size, return_list, time_list, seed_list, seed, 
+                                            CKP_PATH, args.model_name)
 
         # * ----------------------- 绘图 ----------------------------
 
