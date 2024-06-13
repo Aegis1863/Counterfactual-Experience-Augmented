@@ -111,8 +111,8 @@ class PPO:
         truncated = torch.tensor(np.array(transition_dict['truncated']), dtype=torch.int).view(-1, 1).to(self.device)
         
         # * 技巧
-        if args.sta and self.sta.quality < 0.7:  # 在线训练
-            loss = self.train_cvae(states, next_states, False, batch_size=1)  # 训练 vae, 如果数据比较少则batch_size一定要小
+        if not args.sta_kind and args.sta and self.sta.quality < 0.7:  # 在线训练
+            loss = self.train_cvae(states, next_states, False, states.shape[0]//400)  # 训练 vae, 如果数据比较少则batch_size一定要小
             self.sta.generate_test(32, 4, save_path=f'image/{mission}/{args.model_name}/')  # 生成 cvae 图像观察效果
         if self.sta and self.sta.quality > 0.3:
             pre_next_state = self.predict_next_state(states, next_states)
