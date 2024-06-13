@@ -23,7 +23,7 @@ parser = argparse.ArgumentParser(description='sumo_PPO 任务')
 parser.add_argument('--model_name', default="sumo_PPO", type=str, help='任务_基本算法名称')
 parser.add_argument('-n', '--net', default="env/big-intersection/big-intersection.net.xml", type=str, help='SUMO路网文件路径')
 parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersection.rou.xml", type=str, help='SUMO车流文件路径')
-parser.add_argument('-w', '--writer', default=0, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
+parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
 parser.add_argument('--cvae', default=True, type=bool, help='是否利用vae辅助')
 parser.add_argument('--cvae_pretrain', default='', type=str, help='cvae 预训练模型类型，"expert"或"regular"')
@@ -115,7 +115,7 @@ class PPO:
         # * 技巧
         if not args.cvae_pretrain:  # 在线训练
             loss = self.train_cvae(states, next_states, batch_size=states.shape[0]//200)  # 训练 vae, 如果是已经预训练好的就无需训练
-            self.cvae.generate_test(32, 4, save_path='image/sumo_vae/')  # 生成 cvae 图像观察效果
+            self.cvae.generate_test(32, 4, save_path=f'image/{mission}/{model_name}/')  # 生成 cvae 图像观察效果
         if self.cvae:
             pre_next_state = self.predict_next_state(states, next_states)
             target_q1 = self.critic(pre_next_state).detach()
@@ -173,6 +173,7 @@ if __name__ == '__main__':
                 sumo_seed=args.begin_seed,
                 additional_sumo_cmd='--no-step-log')
     mission = args.model_name.split('_')[0]
+    model_name = args.model_name.split('_')[1]
     
     # PPO相关
     actor_lr = 1e-3
