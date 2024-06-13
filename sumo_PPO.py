@@ -246,4 +246,4 @@ if __name__ == '__main__':
         plt.title(f'{args.model_name}, training time: {train_time} min')
         plt.xlabel('Episode')
         plt.ylabel('Return')
-        plt.savefig(f'image/train_{args.model_name}_{seed}_{system_type}.pdf')
+        plt.savefig(f'image/tmp/{mission}_{args.model_name}_{seed}_{system_type}.pdf')
