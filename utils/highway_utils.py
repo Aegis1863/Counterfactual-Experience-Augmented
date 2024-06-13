@@ -336,7 +336,7 @@ def train_DQN(
                 episode_return += reward
                 if replay_buffer.size() > minimal_size:
                     if agent.cvae:
-                        if not agent.cvae_pretrain and agent.cvae.quality < 0.5  # 在线训练
+                        if not agent.cvae_pretrain and agent.cvae.quality < 0.5:  # 在线训练
                             vae_sample = replay_buffer.sample(480)
                             agent.train_cvae(vae_sample[0], vae_sample[2], batch_size=16)  # 训练 vae, 如果是已经预训练好的就无需训练
                             agent.cvae.generate_test(16, 4, save_path='imgae/highway_vae/DQN/')  # 生成 cvae 图像观察效果
