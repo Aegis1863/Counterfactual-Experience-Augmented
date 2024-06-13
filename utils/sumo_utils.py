@@ -23,10 +23,10 @@ from torch.nn.utils import clip_grad_norm_
 
 def read_ckp(ckp_path: str, agent: object, model_name: str, buffer_size: int = 0):
     """读取已有数据, 如果报错, 可以先删除存档"""
-    path = "/".join(ckp_path.split('/')[:-1])
+    path = "/".join(ckp_path.split('/')[:-1])  # ckpt/sumo/PPO/
     if not os.path.exists(path):  # 检查路径在不在
         os.makedirs(path)
-    if os.path.exists(ckp_path):  # 检查文件在不在
+    if os.path.exists(ckp_path):  # 检查文件在不在  # 'ckpt/sumo/PPO/42_win32.pt'
         print('\033[34m[ checkpoint ]\033[0m 读取已有模型权重和训练数据...')
         checkpoint = torch.load(ckp_path)
         s_epoch = checkpoint["epoch"]

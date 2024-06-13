@@ -40,7 +40,7 @@ class CVAE(nn.Module):
     
     def generate_test(self, batch, action_space, epoch=0, save_path=None):
         '''生成一些条件进行生成，返回生成数据的轮廓系数 
-        - batch: 生成批量，建议32
+        - batch: 生成批次，建议32
         - action_space: 动作空间，假如是离散动作，写可选动作个数，如果是连续动作，传入动作界限：[下界，上界]
         - epoch: 图片名称，默认0，如果是多epoch训练可以传入该参数
         - save_path: 图片路径，默认是None，表示不保存生成图
@@ -48,7 +48,7 @@ class CVAE(nn.Module):
         
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         if isinstance(action_space, int):
-            conditions = torch.tensor([[i] * 8 for i in range(action_space)]).view(-1)
+            conditions = torch.tensor([[i] * (batch // action_space) for i in range(action_space)]).view(-1)
             one_hot_conditions = torch.eye(action_space)[conditions].to(device)
         elif isinstance(action_space, list):  # TODO 连续动作空间需要测试
             conditions = torch.FloatTensor(batch//4).uniform_(*action_space).repeat(4).sort()[0]
@@ -116,17 +116,17 @@ def cvae_train(model, device, diff_state, action, optimizer, test_and_feedback=F
             for state, action in test_loader:
                 state, action = state.to(device), action.to(device)
                 recon_batch, mu, logvar = model(state, action)
-                test_loss += cvae_loss(recon_batch, state, mu, logvar).item()
+                test_loss += cvae_loss().item()
 
         test_loss /= len(test_loader.dataset)
-        print(f'Train loss: {train_loss/state.shape[0]:.4f}')
-        print(f'Test loss: {test_loss:.4f}')
+        print(f'Train/test loss: {train_loss/state.shape[0]:.4f} / {test_loss:.4f}')
         return train_loss, test_loss
-
+    return train_loss
 
 if __name__ == '__main__':
-    # state, kind = torch.load('data/dataset/Buffer_of_RDQN.pt'), 'expert'  # 专家数据, 比较少
-    state, kind = torch.load('data/dataset/Buffer_of_regular.pt'), 'regular'  # 业余数据, 比较多
+    mission = 'sumo'  # ! 任务
+    state, kind = torch.load('data/dataset/Buffer_of_RDQN.pt'), 'expert'  # ! 专家数据, 比较少
+    # state, kind = torch.load('data/dataset/Buffer_of_regular.pt'), 'regular'  # ! 业余数据, 比较多
 
     action = state[1:, :4]
     diff_state = state[1:, 5:] - state[:-1, 5:]
@@ -135,7 +135,7 @@ if __name__ == '__main__':
     input_dim = diff_state.shape[-1]
     condition_dim = action.shape[-1]
     latent_dim = input_dim
-    batch_size = 256
+    batch_size = 16
 
     fig_path = f'image/VAE/{kind}/{batch_size}/'
     
@@ -155,4 +155,5 @@ if __name__ == '__main__':
     plt.grid()
     plt.savefig(f'{fig_path}/Silhouette score.png')
     plt.close()
-    torch.save(model, f'model/cvae/{kind}.pt')
+    torch.save(model, f'model/cvae/{mission}/{kind}.pt')
+    print(model.quality)

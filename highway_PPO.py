@@ -22,8 +22,9 @@ import warnings
 warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='highway_PPO 任务')
-parser.add_argument('--model_name', default="highway_PPO", type=str, help='模型名称')
-parser.add_argument('--cvae_kind', default=None, type=str, help='是否利用vae辅助，"expert"或"regular"')
+parser.add_argument('--model_name', default="highway_PPO", type=str, help='任务_基本算法名称')
+parser.add_argument('--cvae', default=False, type=bool, help='是否利用vae辅助，"expert"或"regular"')
+parser.add_argument('--cvae_pretrain', default='expert', type=str, help='cvae 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
 parser.add_argument('-e', '--episodes', default=200, type=int, help='运行回合数')
@@ -177,7 +178,7 @@ if __name__ == '__main__':
     action_dim = env.action_space.n
 
     # VAE
-    if args.cvae_kind:
+    if args.cvae:
         if args.cvae_pretrain:
             cvae = torch.load(f'model/cvae/{mission}/{args.cvae_kind}.pt', map_location=device)
         else:
@@ -192,7 +193,7 @@ if __name__ == '__main__':
 
     # * ----------------------- 训练 ----------------------------
     for seed in range(args.begin_seed, args.end_seed + 1):
-        CKP_PATH = f'ckpt/{"/".join(args.model_name.split('_'))}/{seed}/{system_type}.pt'
+        CKP_PATH = f'ckpt/{"/".join(args.model_name.split('_'))}/{seed}_{system_type}.pt'
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
