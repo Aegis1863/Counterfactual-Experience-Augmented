@@ -6,12 +6,10 @@ import gymnasium as gym
 import time
 import sumo_rl
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from utils.sumo_utils import train_PPO_agent, compute_advantage, read_ckp
 from utils.cvae import CVAE, cvae_train
-# from dynamic_model.train_Ensemble_dynamic_model import *
 import matplotlib.pyplot as plt
 import seaborn as sns
 import wandb
@@ -25,8 +23,8 @@ parser.add_argument('-n', '--net', default="env/big-intersection/big-intersectio
 parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersection.rou.xml", type=str, help='SUMO车流文件路径')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
-parser.add_argument('--cvae', default=False, type=bool, help='是否利用vae辅助')
-parser.add_argument('--cvae_pretrain', default='', type=str, help='cvae 预训练模型类型，"expert"或"regular"')
+parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
+parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-e', '--episodes', default=100, type=int, help='运行回合数')
 parser.add_argument('-r', '--reward', default='diff-waiting-time', type=str, help='奖励函数')
 parser.add_argument('--begin_time', default=1000, type=int, help='回合开始时间')
@@ -113,10 +111,10 @@ class PPO:
         truncated = torch.tensor(np.array(transition_dict['truncated']), dtype=torch.int).view(-1, 1).to(self.device)
         
         # * 技巧
-        if not args.cvae_pretrain and args.cvae:  # 在线训练
-            loss = self.train_cvae(states, next_states, batch_size=states.shape[0]//200)  # 训练 vae, 如果是已经预训练好的就无需训练
-            self.cvae.generate_test(32, 4, save_path=f'image/{mission}/{model_name}/')  # 生成 cvae 图像观察效果
-        if self.cvae:
+        if args.sta and self.cvae.quality < 0.7:  # 在线训练
+            loss = self.train_cvae(states, next_states, False, batch_size=1)  # 训练 vae, 如果数据比较少则batch_size一定要小
+            self.cvae.generate_test(32, 4, save_path=f'image/{mission}/train_vae_{model_name}/')  # 生成 cvae 图像观察效果
+        if self.cvae and self.cvae.quality > 0.3:
             pre_next_state = self.predict_next_state(states, next_states)
             target_q1 = self.critic(pre_next_state).detach()
             target_q2 = self.critic(next_states).detach()
@@ -144,10 +142,10 @@ class PPO:
             self.actor_optimizer.step()
             self.critic_optimizer.step()
             
-    def train_cvae(self, state, next_state, batch_size):
+    def train_cvae(self, state, next_state, test_and_feedback, batch_size):
         vae_action = next_state[:, :4]
         diff_state = next_state[:, 5:] - state[:, 5:]
-        loss = cvae_train(self.cvae, self.device, diff_state, vae_action, self.cvae_optimizer, True, batch_size)
+        loss = cvae_train(self.cvae, self.device, diff_state, vae_action, self.cvae_optimizer, test_and_feedback, batch_size)
         return loss
     
     def predict_next_state(self, state, next_state):
@@ -171,6 +169,7 @@ if __name__ == '__main__':
                 num_seconds=args.duration,
                 reward_fn=args.reward,
                 sumo_seed=args.begin_seed,
+                sumo_warnings=False,
                 additional_sumo_cmd='--no-step-log')
     mission = args.model_name.split('_')[0]
     model_name = args.model_name.split('_')[1]
@@ -190,12 +189,14 @@ if __name__ == '__main__':
     action_dim = env.action_space.n
 
     # VAE
-    if args.cvae:
-        args.model_name = args.model_name + '~' +  'cvae'
-        if args.cvae_pretrain:  # 读取预训练模型
-            args.model_name = args.model_name + '~' + args.cvae_pretrain
-            cvae = torch.load(f'model/cvae/{mission}/{args.cvae_pretrain}.pt', map_location=device)
+    if args.sta:
+        args.model_name = args.model_name + '~' + 'cvae'
+        if args.sta_kind and args.sta:  # 读取预训练模型
+            print(f'==> 读取{args.sta_kind} cvae模型')
+            args.model_name = args.model_name + '~' + args.sta_kind
+            cvae = torch.load(f'model/cvae/{mission}/{args.sta_kind}.pt', map_location=device)
         else:
+            print(f'==> 在线训练 cvae模型')
             cvae = CVAE(state_dim - 5, action_dim, state_dim - 5)  # 在线训练, sumo状态维度要减去5，前五个没有帮助
     else:
         cvae = None
@@ -214,7 +215,8 @@ if __name__ == '__main__':
                 begin_time=args.begin_time,
                 num_seconds=args.duration,
                 reward_fn=args.reward,
-                sumo_seed=args.begin_seed,  # 需要切换种子
+                sumo_warnings=False,
+                sumo_seed=seed,  # 需要切换种子
                 additional_sumo_cmd='--no-step-log')
         random.seed(seed)
         np.random.seed(seed)
@@ -240,9 +242,7 @@ if __name__ == '__main__':
                                             s_episode, args.episodes, return_list, queue_list, 
                                             waitt_list, speed_list, time_list, seed_list, seed, CKP_PATH,
                                             )
-
         # * ----------------- 绘图 ---------------------
-
         sns.lineplot(return_list, label=f'{seed}')
         plt.title(f'{args.model_name}, training time: {train_time} min')
         plt.xlabel('Episode')
