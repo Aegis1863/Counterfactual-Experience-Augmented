@@ -85,7 +85,7 @@ def save_plot_data(return_list, queue_list, wait_time_list,
     mission_name = ckpt_path.split('/')[1]
     alg_name = ckpt_path.split('/')[2]
     if not os.path.exists(f"data/plot_data/{mission_name}/{alg_name}/"):  # 路径不存在时创建
-        os.makedirs(f"data/plot_data{mission_name}/{alg_name}/")  # data/plot_data/sumo/PPO/
+        os.makedirs(f"data/plot_data/{mission_name}/{alg_name}/")  # data/plot_data/sumo/PPO/
     log_path = f"data/plot_data/{mission_name}/{alg_name}/{seed}_{system_type}.csv"
     return_save = pd.DataFrame()
     return_save["Algorithm"] = [alg_name] * len(return_list)  # 算法名称

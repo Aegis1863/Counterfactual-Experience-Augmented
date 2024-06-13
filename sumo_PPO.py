@@ -25,7 +25,7 @@ parser.add_argument('-n', '--net', default="env/big-intersection/big-intersectio
 parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersection.rou.xml", type=str, help='SUMO车流文件路径')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
-parser.add_argument('--cvae', default=True, type=bool, help='是否利用vae辅助')
+parser.add_argument('--cvae', default=False, type=bool, help='是否利用vae辅助')
 parser.add_argument('--cvae_pretrain', default='', type=str, help='cvae 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-e', '--episodes', default=100, type=int, help='运行回合数')
 parser.add_argument('-r', '--reward', default='diff-waiting-time', type=str, help='奖励函数')
@@ -113,7 +113,7 @@ class PPO:
         truncated = torch.tensor(np.array(transition_dict['truncated']), dtype=torch.int).view(-1, 1).to(self.device)
         
         # * 技巧
-        if not args.cvae_pretrain:  # 在线训练
+        if not args.cvae_pretrain and args.cvae:  # 在线训练
             loss = self.train_cvae(states, next_states, batch_size=states.shape[0]//200)  # 训练 vae, 如果是已经预训练好的就无需训练
             self.cvae.generate_test(32, 4, save_path=f'image/{mission}/{model_name}/')  # 生成 cvae 图像观察效果
         if self.cvae:
