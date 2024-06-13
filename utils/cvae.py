@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset, random_split
@@ -58,6 +59,7 @@ class CVAE(nn.Module):
         quality = silhouette_score(generated, conditions)  # 轮廓系数
         self.quality = quality
         if save_path:
+            os.makedirs(save_path) if not os.path.exists(save_path) else None
             plt.figure(figsize=(6, 6))
             ax = sns.heatmap(generated, cbar=False)
             ax.set_yticks(np.arange(len(conditions)) + 0.5)

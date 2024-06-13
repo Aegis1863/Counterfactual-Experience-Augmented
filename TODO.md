@@ -4,17 +4,20 @@
   - [ ] PPO
     - [X] None
     - [ ] VAE
-    - [ ] pretrain VAE
-      - [ ] expert
-      - [ ] regular
+      - [ ] full train
+    - [X] pretrain VAE
+      - [X] expert
+      - [X] regular
 - [ ] highway
   - [ ] DQN
     - [ ] None
     - [ ] VAE
+      - [ ] full train
     - [ ] pretrain VAE
       - [ ] regular
   - [ ] PPO
     - [ ] None
     - [ ] VAE
+      - [ ] full train
     - [ ] pretrain VAE
       - [ ] regular

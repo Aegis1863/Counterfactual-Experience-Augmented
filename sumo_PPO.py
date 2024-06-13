@@ -26,7 +26,7 @@ parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersecti
 parser.add_argument('-w', '--writer', default=0, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
 parser.add_argument('--cvae', default=True, type=bool, help='是否利用vae辅助，"expert"或"regular"')
-parser.add_argument('--cvae_pretrain', default='', type=str, help='cvae 预训练模型类型，"expert"或"regular"')
+parser.add_argument('--cvae_pretrain', default='regular', type=str, help='cvae 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-e', '--episodes', default=100, type=int, help='运行回合数')
 parser.add_argument('-r', '--reward', default='diff-waiting-time', type=str, help='奖励函数')
 parser.add_argument('--begin_time', default=1000, type=int, help='回合开始时间')
@@ -114,8 +114,8 @@ class PPO:
         
         # * 技巧
         if not args.cvae_pretrain:  # 在线训练
-            loss = self.train_cvae(states, next_states)  # 训练 vae, 如果是已经预训练好的就无需训练
-            self.cvae.generate_test(16, 4, save_path='imgae/sumo_vae/')  # 生成 cvae 图像观察效果
+            loss = self.train_cvae(states, next_states, batch_size=states.shape[0]//200)  # 训练 vae, 如果是已经预训练好的就无需训练
+            self.cvae.generate_test(32, 4, save_path='image/sumo_vae/')  # 生成 cvae 图像观察效果
         if self.cvae:
             pre_next_state = self.predict_next_state(states, next_states)
             target_q1 = self.critic(pre_next_state).detach()
@@ -144,10 +144,10 @@ class PPO:
             self.actor_optimizer.step()
             self.critic_optimizer.step()
             
-    def train_cvae(self, state, next_state):
+    def train_cvae(self, state, next_state, batch_size):
         vae_action = next_state[:, :4]
         diff_state = next_state[:, 5:] - state[:, 5:]
-        loss = cvae_train(self.cvae, self.device, diff_state, vae_action, self.cvae_optimizer, True, 16)
+        loss = cvae_train(self.cvae, self.device, diff_state, vae_action, self.cvae_optimizer, True, batch_size)
         return loss
     
     def predict_next_state(self, state, next_state):
@@ -195,7 +195,7 @@ if __name__ == '__main__':
             args.model_name = args.model_name + '~' + args.cvae_pretrain
             cvae = torch.load(f'model/cvae/{mission}/{args.cvae_pretrain}.pt', map_location=device)
         else:
-            cvae = CVAE(state_dim - 5, action_dim, state_dim)  # 在线训练, sumo第一个维度要减去5
+            cvae = CVAE(state_dim - 5, action_dim, state_dim - 5)  # 在线训练, sumo状态维度要减去5，前五个没有帮助
     else:
         cvae = None
     
@@ -235,7 +235,6 @@ if __name__ == '__main__':
                 "mission name": args.model_name
                 }
             )
-        print('开始训练')
         return_list, train_time = train_PPO_agent(env, agent, args.writer, s_epoch, total_epochs, 
                                             s_episode, args.episodes, return_list, queue_list, 
                                             waitt_list, speed_list, time_list, seed_list, seed, CKP_PATH,
