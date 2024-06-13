@@ -1,10 +1,10 @@
 # 待办表
 
-- [ ] SUMO
-  - [ ] PPO
+- [X] SUMO
+  - [X] PPO
     - [X] None
-    - [ ] VAE
-      - [ ] full train
+    - [X] VAE
+      - [X] full train
     - [X] pretrain VAE
       - [X] expert
       - [X] regular
