@@ -10,5 +10,5 @@ backup/
 ckpt/
 tmp/
 api_key.txt
-work.sh
+*.sh
 server_log/
