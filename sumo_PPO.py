@@ -181,7 +181,7 @@ if __name__ == '__main__':
     gamma = 0.98  # 时序差分学习率，也作为折算奖励的系数之一
     total_epochs = 1  # 迭代轮数
     eps = 0.2  # 截断范围参数, 1-eps ~ 1+eps
-    epochs = 20  # PPO中一条序列训练多少轮，和迭代算法无关
+    epochs = 10  # PPO中一条序列训练多少轮，和迭代算法无关
 
     # 神经网络相关
     hidden_dim = 128
