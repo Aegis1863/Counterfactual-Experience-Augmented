@@ -18,6 +18,7 @@ class CVAE(nn.Module):
         self.fc3 = nn.Linear(latent_dim + condition_dim, 128)
         self.fc4 = nn.Linear(128, input_dim)
         self.latent_dim = latent_dim
+        self.quality = 0  # 轮廓系数
 
     def encode(self, x, c):
         h1 = torch.relu(self.fc1(torch.cat([x, c], dim=1)))
@@ -38,7 +39,7 @@ class CVAE(nn.Module):
         return self.decode(z, c), mu, logvar
     
     def generate_test(self, batch, action_space, epoch=0, save_path=None):
-        '''生成一些条件进行生成，返回生成数据的轮廓系数 \\
+        '''生成一些条件进行生成，返回生成数据的轮廓系数 
         - batch: 生成批量，建议32
         - action_space: 动作空间，假如是离散动作，写可选动作个数，如果是连续动作，传入动作界限：[下界，上界]
         - epoch: 图片名称，默认0，如果是多epoch训练可以传入该参数
@@ -55,7 +56,7 @@ class CVAE(nn.Module):
             sample = torch.randn(batch, self.latent_dim).to(device)
             generated = self.decode(sample, one_hot_conditions).cpu()
         quality = silhouette_score(generated, conditions)  # 轮廓系数
-        
+        self.quality = quality
         if save_path:
             plt.figure(figsize=(6, 6))
             ax = sns.heatmap(generated, cbar=False)

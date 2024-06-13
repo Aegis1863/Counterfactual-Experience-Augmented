@@ -69,6 +69,7 @@ class DQN:
         self.epsilon = epsilon
         self.update_interval = update_interval
         self.cvae = cvae
+        self.cvae_pretrain = args.cvae_pretrain
         self.count = 0
         self.device = device
 
@@ -96,7 +97,16 @@ class DQN:
     
         max_action = self.q_net(next_states).max(1)[1].view(-1, 1)
         max_next_q_values = self.target_q_net(next_states).gather(1, max_action)
-
+        
+        # * 技巧一
+        if self.cvae:
+            pre_next_state = self.predict_next_state(states, next_states)
+            target_q1 = self.target_q_net(pre_next_state).gather(1, max_action)
+            target_q2 = self.target_q_net(next_states).gather(1, max_action)
+            max_next_q_values = torch.min(target_q1, target_q2)
+        else:
+            max_next_q_values = self.target_q_net(next_states).gather(1, max_action)
+            
         q_targets = rewards + self.gamma * max_next_q_values * (1 - dones | truncated)  # TD误差目标
         dqn_loss = torch.mean(F.mse_loss(q_values, q_targets))  # 均方误差损失函数
         self.optimizer.zero_grad()  # PyTorch中默认梯度会累积,这里需要显式将梯度置为0
@@ -106,10 +116,21 @@ class DQN:
         if self.count % self.update_interval == 0:
             self.target_q_net.load_state_dict(self.q_net.state_dict())  # 更新目标网络
         self.count += 1
-        
-    def cvae_assist(self):
-        # TODO 考虑训练方案
-        pass
+    
+    def train_cvae(self, state, next_state, batch_size=16):
+        vae_action = next_state[:, :4]
+        diff_state = next_state[:, 5:] - state[:, 5:]
+        train_loss = cvae_train(self.cvae, diff_state, vae_action, self.cvae_optimizer, batch_size)
+        return train_loss
+    
+    def predict_next_state(self, state, next_state):
+        action = state[:, :4]
+        with torch.no_grad():
+            sample = torch.randn(state.shape[0], 32).to(device)  # 随机采样的
+            generated = self.cvae.decode(sample, action)
+        pre_next_state = torch.concat([next_state[:, :5], state[:, 5:] + generated], dim=-1)
+        return pre_next_state
+    
 
 if __name__ == '__main__':     
     # * --------------------- 参数 -------------------------
@@ -124,7 +145,7 @@ if __name__ == '__main__':
     epsilon = 1  # 刚开始随机动作,更新中线性降低
     update_interval = 50  # 若干回合更新一次目标网络
     minimal_size = 1000  # 最小经验数
-    batch_size = 128  # 每回合中的最佳分数
+    batch_size = 128
 
     # 神经网络相关
     lr = 2e-3
