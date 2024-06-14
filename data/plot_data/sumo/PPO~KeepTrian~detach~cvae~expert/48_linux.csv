@@ -1,0 +1,9 @@
+﻿Algorithm,Seed,Return,Waiting time,Queue length,Mean speed,Log time
+PPO~KeepTrian~detach~cvae~expert,48,-3585.04,40174.0,639,0.6335604972105675,06-14 13:22:10
+PPO~KeepTrian~detach~cvae~expert,48,-754.79,2535.0,166,2.92330529265495,06-14 13:22:19
+PPO~KeepTrian~detach~cvae~expert,48,-1386.34,3160.0,131,2.0159474669499886,06-14 13:22:26
+PPO~KeepTrian~detach~cvae~expert,48,-922.4,4849.0,208,1.3886126485240065,06-14 13:22:35
+PPO~KeepTrian~detach~cvae~expert,48,-1070.5,1559.0,106,2.6724867405671167,06-14 13:22:43
+PPO~KeepTrian~detach~cvae~expert,48,-598.51,2126.0,57,2.4108931003907554,06-14 13:22:49
+PPO~KeepTrian~detach~cvae~expert,48,-1183.66,6830.0,202,1.346514076601573,06-14 13:22:56
+PPO~KeepTrian~detach~cvae~expert,48,-225.97,520.0,26,5.299641774552715,06-14 13:23:03
