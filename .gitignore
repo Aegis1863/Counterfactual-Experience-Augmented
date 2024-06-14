@@ -7,7 +7,7 @@ latest_run
 *.pyc
 tmp.png
 backup/
-ckpt/
+# ckpt/
 tmp/
 api_key.txt
 *.sh

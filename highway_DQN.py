@@ -24,8 +24,8 @@ parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
-parser.add_argument('-e', '--episodes', default=1800, type=int, help='运行回合数')
-parser.add_argument('-b', '--buffer_size', default=20000, type=int, help='经验池大小')
+parser.add_argument('-e', '--episodes', default=1600, type=int, help='运行回合数')
+parser.add_argument('-b', '--buffer_size', default=30000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=42, type=int, help='结束种子')
 args = parser.parse_args()
@@ -132,11 +132,19 @@ if __name__ == '__main__':
     env = gym.make('highway-fast-v0')
     env.configure({
         "lanes_count": 3,
-        "vehicles_density": 2,
+        "vehicles_density": 1.5,
         "duration": 100,
         "collision_reward": -30,
-        "right_lane_reward": 0,
-        "high_speed_reward": 0,
+        "right_lane_reward": 0.2,
+        "high_speed_reward": 5,
+        "offroad_terminal": False,
+        "action": {
+            "type": "DiscreteMetaAction",
+            "longitudinal": True,
+            "lateral": True,
+            "target_speeds": [0, 10, 20],  # TODO 调整速度
+        },
+        # "manual_control": True
     })
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     mission = args.model_name.split('_')[0]
@@ -148,7 +156,7 @@ if __name__ == '__main__':
     epsilon = 1  # 刚开始随机动作,更新中线性降低
     update_interval = 50  # 若干回合更新一次目标网络
     minimal_size = 500  # 最小经验数
-    batch_size = 256
+    batch_size = 128
 
     # 神经网络相关
     lr = 2e-3
