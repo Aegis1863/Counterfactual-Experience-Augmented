@@ -4,7 +4,7 @@ import pandas as pd
 import os
 
 def smooth(data: pd.Series):
-    smooth_data = data.ewm(alpha=0.2).mean()
+    smooth_data = data.ewm(alpha=0.1).mean()
     return smooth_data
 
 colors = ['#e5071a', '#00CD00', '#1e90ff', '#FF9900', '#fd79a8', '#8074b2', '#636e72']
@@ -13,7 +13,7 @@ colors = ['#e5071a', '#00CD00', '#1e90ff', '#FF9900', '#fd79a8', '#8074b2', '#63
 # algs = ['PPO', 'PPO_B_0', 'PPO_B_500', 'PPO_B_1k']  # * 给出算法文件夹名
 algs = ['PPO', 'PPO~cvae', 'PPO~cvae~regular', 'PPO~cvae~expert']  # * 给出算法文件夹名
 mission = 'sumo'
-target_index = 'Return'
+target_index = 'Mean speed'
 # -------------------
 
 plt.figure(figsize=(8, 5))
@@ -29,7 +29,7 @@ for index, alg in enumerate(algs):
     ndf['Mean'] = df.mean(axis=1)
     ndf['Max'] = df.max(axis=1)
     ndf['Min'] = df.min(axis=1)
-    print(alg + ' final mean:', round(ndf['Mean'].mean(), 3))
+    print(f'{alg} mean of {target_index}:', round(ndf['Mean'].mean(), 3))
     ax = sns.set_theme(style='ticks', font_scale=1.3)
     plt.rcParams['font.family'] = 'Times New Roman'
     plt.grid(ls=':', color='grey', lw=1)

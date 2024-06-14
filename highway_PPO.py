@@ -162,7 +162,16 @@ if __name__ == '__main__':
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     env = gym.make('highway-fast-v0')
     # env = gym.make("highway-v0", render_mode='human')
-    
+    env.configure({
+        "lanes_count": 3,
+        "vehicles_density": 1.5,
+        "duration": 100,
+        "collision_reward": -30,
+        "right_lane_reward": 0.2,
+        "high_speed_reward": 0,
+        "reward_speed_range": [5, 40],
+        "offroad_terminal": False,
+    })
     # PPO相关
     actor_lr = 5e-4
     critic_lr = 1e-3
@@ -173,7 +182,7 @@ if __name__ == '__main__':
     epochs = 20  # PPO中一条序列训练多少轮，和迭代算法无关
 
     # 神经网络相关
-    hidden_dim = 64
+    hidden_dim = 128
     state_dim = torch.multiply(*env.observation_space.shape)
     action_dim = env.action_space.n
 
@@ -184,7 +193,7 @@ if __name__ == '__main__':
         else:
             cvae = CVAE(state_dim, action_dim, state_dim)  # 在线训练
     else:
-        cvae = None  
+        cvae = None
 
     # 任务相关
     system_type = sys.platform  # 操作系统

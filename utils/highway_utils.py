@@ -362,7 +362,7 @@ def train_DQN(
                           seed_list, ckpt_path, epoch, episode, agent.epsilon,
                           best_weight, seed)
             if episode % 40 == 0:
-                episode_time = (time.time() - episode_begin_time) // 6
+                episode_time = (time.time() - episode_begin_time) / 6
                 print('\033[32m[ %d, <%d/%d>, %.2f min ]\033[0m: return: %.2f, epsilon: %.2f, pool_size: %d'
                     % (seed, episode+1, total_episodes, episode_time, np.mean(return_list[-40:]), agent.epsilon, replay_buffer.size()))
             s_episode = 0
