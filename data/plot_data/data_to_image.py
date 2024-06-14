@@ -4,14 +4,14 @@ import pandas as pd
 import os
 
 def smooth(data: pd.Series):
-    smooth_data = data.ewm(alpha=0.1).mean()
+    smooth_data = data.ewm(alpha=0.2).mean()
     return smooth_data
 
 colors = ['#e5071a', '#00CD00', '#1e90ff', '#FF9900', '#fd79a8', '#8074b2', '#636e72']
 
 # -------------------
 # algs = ['PPO', 'PPO_B_0', 'PPO_B_500', 'PPO_B_1k']  # * 给出算法文件夹名
-algs = ['PPO', 'PPO~cvae']  # * 给出算法文件夹名
+algs = ['PPO', 'PPO~cvae~expert', 'PPO~KeepTrain~cvae~expert', 'PPO~KeepTrian~detach~cvae~expert']  # * 给出算法文件夹名
 mission = 'sumo'
 target_index = 'Return'
 # -------------------
