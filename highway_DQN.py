@@ -136,14 +136,14 @@ if __name__ == '__main__':
         "duration": 100,
         "collision_reward": -30,
         "right_lane_reward": 0.2,
-        "high_speed_reward": 2,
+        "high_speed_reward": 0,
         "offroad_terminal": False,
         # "reward_speed_range": [20, 30],
         "action": {
             "type": "DiscreteMetaAction",
             "longitudinal": True,
             "lateral": True,
-            "target_speeds": [17, 20, 25],  # TODO 调整速度
+            # "target_speeds": [17, 20, 25],  # TODO 调整速度
         },
         # "manual_control": True
     })

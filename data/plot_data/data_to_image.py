@@ -1,11 +1,18 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+import numpy as np
 import os
 
 def smooth(data: pd.Series):
-    smooth_data = data.ewm(alpha=0.2).mean()
+    smooth_data = pd.Series(data).ewm(alpha=0.1).mean()
     return smooth_data
+
+def cumulative_mean(data):
+    data = np.array(data)  # 将输入数据转换为numpy数组
+    cumulative_sum = np.cumsum(data)  # 计算累积和
+    cumulative_mean = cumulative_sum / np.arange(1, len(data) + 1)  # 计算累积均值
+    return cumulative_mean
 
 colors = ['#e5071a', '#00CD00', '#1e90ff', '#FF9900', '#fd79a8', '#8074b2', '#636e72']
 
