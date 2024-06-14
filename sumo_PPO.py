@@ -116,8 +116,8 @@ class PPO:
             self.sta.generate_test(32, 4, save_path=f'image/{mission}/{args.model_name}/')  # 生成 cvae 图像观察效果
         if self.sta and self.sta.quality > 0.3:
             pre_next_state = self.predict_next_state(states, next_states)
-            target_q1 = self.critic(pre_next_state)
-            target_q2 = self.critic(next_states)
+            target_q1 = self.critic(pre_next_state).detach()
+            target_q2 = self.critic(next_states).detach()
             target_q = torch.min(target_q1, target_q2)
         else:
             target_q = self.critic(next_states)

@@ -11,9 +11,9 @@ colors = ['#e5071a', '#00CD00', '#1e90ff', '#FF9900', '#fd79a8', '#8074b2', '#63
 
 # -------------------
 # algs = ['PPO', 'PPO_B_0', 'PPO_B_500', 'PPO_B_1k']  # * 给出算法文件夹名
-algs = ['PPO', 'PPO~cvae', 'PPO~cvae~regular', 'PPO~cvae~expert']  # * 给出算法文件夹名
+algs = ['PPO', 'PPO~cvae']  # * 给出算法文件夹名
 mission = 'sumo'
-target_index = 'Mean speed'
+target_index = 'Return'
 # -------------------
 
 plt.figure(figsize=(8, 5))
@@ -34,7 +34,7 @@ for index, alg in enumerate(algs):
     plt.rcParams['font.family'] = 'Times New Roman'
     plt.grid(ls=':', color='grey', lw=1)
     plt.xlabel('Episode($×10^3$s)')
-    plt.ylabel('Return')
+    plt.ylabel(f'{target_index}')
     # plt.ylim((10, 100))
     # plt.xlim((0, 200))
 
