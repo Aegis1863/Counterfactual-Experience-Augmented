@@ -61,7 +61,7 @@ class CVAE(nn.Module):
             generated = self.decode(sample, one_hot_conditions).cpu()
         quality = silhouette_score(generated, conditions)  # 轮廓系数
         self.quality = quality
-        if save_path:
+        if save_path and self.quality < 0.8:
             os.makedirs(save_path) if not os.path.exists(save_path) else None
             plt.figure(figsize=(6, 6))
             ax = sns.heatmap(generated, cbar=False)
