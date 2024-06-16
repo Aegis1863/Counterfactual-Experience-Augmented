@@ -65,10 +65,15 @@ class DQN:
         self.gamma = gamma
         self.epsilon = epsilon
         self.update_interval = update_interval
-        self.sta = sta
-        self.sta = args.sta_kind
         self.count = 0
         self.device = device
+        
+        if sta:
+            self.sta = cvae.to(device)
+            self.sta_optimizer = torch.optim.Adam(self.sta.parameters(), lr=1e-3)
+        else:
+            self.sta = None
+
 
     def take_action(self, state):
         if np.random.random() < self.epsilon:
@@ -94,8 +99,8 @@ class DQN:
         max_action = self.q_net(next_states).max(1)[1].view(-1, 1)
         
         # * 技巧一
-        if self.sta and self.sta.quality > 0.3:
-            pre_next_state = self.predict_next_state(states, actions, next_states)
+        if self.sta and self.sta.quality > 0.2:
+            pre_next_state = self.predict_next_state(states, actions.squeeze())
             target_q1 = self.target_q_net(pre_next_state).detach()
             target_q2 = self.target_q_net(next_states).detach()
             max_next_q_values = torch.min(target_q1, target_q2)
@@ -106,27 +111,28 @@ class DQN:
         dqn_loss = torch.mean(F.mse_loss(q_values, q_targets))  # 均方误差损失函数
         self.optimizer.zero_grad()  # PyTorch中默认梯度会累积,这里需要显式将梯度置为0
         dqn_loss.backward()  # 反向传播更新参数
-        self.optimizer.step() # 执行Adam梯度下降
+        self.optimizer.step()  # 执行Adam梯度下降
 
         if self.count % self.update_interval == 0:
             self.target_q_net.load_state_dict(self.q_net.state_dict())  # 更新目标网络
         self.count += 1
     
     def train_cvae(self, state, action, next_state, test_and_feedback, batch_size):
-        vae_action = action
-        diff_state = next_state - state
+        vae_action = torch.nn.functional.one_hot(torch.tensor(action), len(action.unique()))
+        diff_state = torch.tensor(next_state - state)
         loss = cvae_train(self.sta, self.device, diff_state, vae_action, self.sta_optimizer, test_and_feedback, batch_size)
         return loss
     
-    def predict_next_state(self, state, action, next_state):
+    def predict_next_state(self, state, action):
         with torch.no_grad():
-            sample = torch.randn(state.shape[0], 32).to(device)  # 随机采样的
+            action = torch.nn.functional.one_hot(action, len(action.unique()))
+            sample = torch.randn(state.shape).to(device)  # 随机采样的
             generated = self.sta.decode(sample, action)
-        pre_next_state = torch.concat([next_state, state + generated], dim=-1)
+        pre_next_state = torch.concat([state + generated], dim=-1)
         return pre_next_state
     
 
-if __name__ == '__main__':     
+if __name__ == '__main__':
     # * --------------------- 参数 -------------------------
     # 环境相关
     env = gym.make('highway-fast-v0')
@@ -159,9 +165,15 @@ if __name__ == '__main__':
     action_dim = env.action_space.n
 
     # VAE
+    '''
+    # ---- 调试用，上线删除 ----
+    args.sta = True
+    args.sta_kind = 'regular'
+    # ------------------------
+    '''
     if args.sta:
         args.model_name = args.model_name + '~' + 'cvae'
-        if args.sta_kind and args.sta:  # 读取预训练模型
+        if args.sta_kind:  # 读取预训练模型
             print(f'==> 读取{args.sta_kind} cvae模型')
             args.model_name = args.model_name + '~' + args.sta_kind
             cvae = torch.load(f'model/cvae/{mission}/{args.sta_kind}.pt', map_location=device)
@@ -185,7 +197,7 @@ if __name__ == '__main__':
         agent = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon, update_interval, cvae, device)
 
         (s_epoch, s_episode, return_list, 
-        time_list, seed_list, replay_buffer) = read_ckp(CKP_PATH, agent,  args.model_name,  args.buffer_size)
+        time_list, seed_list, replay_buffer) = read_ckp(CKP_PATH, agent,  args.model_name, args.buffer_size)
 
         if args.writer > 1:
             wandb.init(
@@ -202,7 +214,7 @@ if __name__ == '__main__':
         return_list, train_time = train_DQN(env, agent, args.writer, s_epoch, total_epoch, s_episode,
                                             args.episodes, replay_buffer, minimal_size, 
                                             batch_size, return_list, time_list, seed_list, seed, 
-                                            CKP_PATH, args.model_name)
+                                            CKP_PATH)
 
         # * ----------------------- 绘图 ----------------------------
 

@@ -1,4 +1,5 @@
 import os
+from re import S
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset, random_split
@@ -42,6 +43,17 @@ class CVAE(nn.Module):
         self.quality = self.generate_test(32, self.condition_dim)  # 轮廓系数
         return self.decode(z, c), mu, logvar
     
+    def inference(self, c):
+        '''直接根据条件生成结果
+        - c: one-hot 条件
+        '''
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        with torch.no_grad():
+            c = c.to(device)
+            sample = torch.randn(c.shape[0], self.latent_dim).to(device)
+            generated = self.decode(sample, c).cpu()
+        return generated
+    
     def generate_test(self, batch, action_space, save_path=None):
         '''生成一些条件进行生成，返回生成数据的轮廓系数 
         - batch: 生成批次，建议32
@@ -78,7 +90,8 @@ class CVAE(nn.Module):
         return quality
     
 
-def cvae_train(model, device, diff_state, action, optimizer, test_and_feedback=False, batch_size=32):
+def cvae_train(model, device, diff_state:torch.tensor, action:torch.tensor, 
+               optimizer: object, test_and_feedback=False, batch_size=32):
     '''
     model: cvae模型
     diff_state: 差分状态， diff_state = state[1:, 5:] - state[:-1, 5:]
@@ -87,6 +100,9 @@ def cvae_train(model, device, diff_state, action, optimizer, test_and_feedback=F
     test_and_feedback: 是否给反馈，默认False
     batch_size: 在线训练时每次训练的数据量比较小的时候，批次大小不建议给大
     '''
+    if not isinstance(diff_state, torch.Tensor):
+        diff_state = torch.tensor(diff_state) 
+    
     def cvae_loss():
         MSE = nn.functional.mse_loss(recon_batch, state) 
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())

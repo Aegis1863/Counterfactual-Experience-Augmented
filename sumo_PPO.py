@@ -149,6 +149,7 @@ class PPO:
         return loss
     
     def predict_next_state(self, state, next_state):
+        '''sumo 此处构造与其他的不一致'''
         action = state[:, :4]
         with torch.no_grad():
             sample = torch.randn(state.shape[0], 32).to(device)  # 随机采样的

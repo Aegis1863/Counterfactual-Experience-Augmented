@@ -314,10 +314,10 @@ def train_DQN(
         time_list: list,
         seed_list: list,
         seed: int,
-        ckpt_path: str,
-        model_name: str):
+        ckpt_path: str,):
     start_time = time.time()
-    best_score = -100  # 初始化最佳分数
+    # fake_pool = ReplayBuffer(replay_buffer.capacity)
+    best_score = -1e10  # 初始化最佳分数
     return_list = [] if not return_list else return_list
     for epoch in range(s_epoch, total_epoch):
         for episode in range(s_episode, total_episodes):
@@ -329,25 +329,27 @@ def train_DQN(
                 action = agent.take_action(state)
                 next_state, reward, done, truncated, info = env.step(action)
                 next_state = next_state.reshape(-1)
-                replay_buffer.add(state, action, reward, next_state, done, truncated)
+                replay_buffer.add(state, action, reward, next_state, done, truncated, )
                 state = next_state
                 episode_return += reward
                 if replay_buffer.size() > minimal_size:
-                    if agent.sta:
-                        if agent.sta.quality < 0.7:  # 在线训练
-                            vae_sample = replay_buffer.return_all_samples()
-                            vae_batch = vae_sample[0].shape[0] // 600
-                            agent.train_cvae(vae_sample[0], vae_sample[1], vae_sample[3], True, vae_batch)  # 训练 vae
-                            agent.sta.generate_test(32, 4, save_path=f'imgae/highway/{model_name}/')
-                        if agent.sta.quality > 0.2:
-                            replay_buffer = exp_expand(replay_buffer, agent.sta, batch_size)  # 经验增广
+                    if agent.sta:  # 在线训练
+                        vae_sample = replay_buffer.return_all_samples()
+                        s = torch.tensor(vae_sample[0])
+                        a = torch.tensor(vae_sample[1])
+                        ns = torch.tensor(vae_sample[3])
+                        vae_batch = max(s.shape[0] // 600, 1)
+                        agent.train_cvae(s, a, ns, False, vae_batch)  # 训练 vae
+                        quality = agent.sta.generate_test(32, len(a.unique()))  # 当前模型生成图像的分类质量
                         
-                    b_s, b_a, b_r, b_ns, b_d, b_t = replay_buffer.sample(batch_size)
+                        b_s, b_a, b_r, b_ns, b_d, b_t = counterfactual_exp_expand(replay_buffer, agent.sta, batch_size, len(a.unique()))
+                    else:
+                        b_s, b_a, b_r, b_ns, b_d, b_t = replay_buffer.sample(batch_size)
                     transition_dict = {
                         'states': b_s, 'actions': b_a, 'next_states': b_ns,
                         'rewards': b_r, 'dones': b_d, 'truncated': b_t,
                     }
-                    agent.update(transition_dict)
+                    agent.update(transition_dict)  # ! 策略训练
                 if episode_return > best_score:
                     best_weight = agent.q_net.state_dict()
                     best_score = episode_return
@@ -402,6 +404,7 @@ class ReplayBuffer:
     """异策略的经验缓存"""
 
     def __init__(self, capacity: int):
+        self.capacity = capacity
         self.buffer = collections.deque(maxlen=capacity)
 
     def add(self, state: dict, action: dict, reward: float, next_state: dict, done: dict, truncated: dict):
@@ -424,7 +427,50 @@ class ReplayBuffer:
         return np.array(state), action, reward, np.array(next_state), done, truncated
     
     
-def exp_expand(replay_buffer, sta, batch_size):
-    b_s, b_a, b_r, b_ns, b_d, b_t = replay_buffer.sample(batch_size)
+def counterfactual_exp_expand(replay_buffer, sta, batch_size, action_space_size):
+    # 抽样batch_size组真实经验
+    b_s, b_a, b_r, b_ns, b_d, b_t = [torch.tensor(i) for i in replay_buffer.sample(batch_size)]
     
-    pass
+    # 总动作空间大小
+    action_space_size = 5
+
+    # 生成反事实动作和其独热向量表示
+    counterfactual_actions = []
+    for a in b_a:
+        counterfactual_actions.append([i for i in range(action_space_size) if i != a])
+    counterfactual_actions = torch.tensor(counterfactual_actions).flatten()
+
+    one_hot_actions = torch.nn.functional.one_hot(counterfactual_actions, num_classes=action_space_size)
+
+    # 生成反事实状态转移向量
+    diff_state = sta.inference(one_hot_actions)
+
+    # 扩展状态以匹配反事实状态转移
+    expand_b_s = b_s.repeat_interleave(action_space_size - 1, dim=0)
+    b_ns_prime = expand_b_s + diff_state
+
+    # 读取所有真实经验
+    all_s, all_a, all_r, all_ns, all_d, all_t = [torch.tensor(i) for i in replay_buffer.return_all_samples()]
+
+    # 将真实经验和虚拟经验拼接成向量
+    real_exp = torch.cat((all_s, torch.nn.functional.one_hot(all_a, num_classes=action_space_size), all_ns), dim=1)
+    fake_exp = torch.cat((expand_b_s, one_hot_actions, b_ns_prime), dim=1)
+
+    # 计算虚拟经验与真实经验的距离并找到最匹配的真实经验
+    distances = torch.cdist(fake_exp, real_exp)
+    min_indices = torch.argmin(distances, dim=1)
+    b_r_prime = all_r[min_indices]
+
+    # 虚拟经验的其他标记
+    b_d_prime = torch.zeros_like(b_r_prime, dtype=torch.bool)
+    b_t_prime = torch.zeros_like(b_r_prime, dtype=torch.bool)
+
+    # 组合虚拟经验与真实经验
+    augmented_s = torch.cat((b_s, expand_b_s), dim=0)
+    augmented_a = torch.cat((b_a, counterfactual_actions), dim=0)
+    augmented_r = torch.cat((b_r, b_r_prime), dim=0)
+    augmented_ns = torch.cat((b_ns, b_ns_prime), dim=0)
+    augmented_d = torch.cat((b_d, b_d_prime), dim=0)
+    augmented_t = torch.cat((b_t, b_t_prime), dim=0)
+
+    return augmented_s, augmented_a, augmented_r, augmented_ns, augmented_d, augmented_t
