@@ -308,6 +308,7 @@ def train_DQN(
         total_epoch: int,
         s_episode: int,
         total_episodes: int,
+        total_control_point: int,
         replay_buffer: object,
         minimal_size: int,
         batch_size: int,
@@ -348,7 +349,8 @@ def train_DQN(
             time_list.append(time.strftime('%m-%d %H:%M:%S', time.localtime()))
             seed_list.append(seed)
             # 调整epsilon
-            agent.epsilon = max(1 - episode / (total_episodes / 1.5), 0.01)
+            # ! total_control_point=0.3 表示在整个训练的 0.3 处模型取得完全控制
+            agent.epsilon = max(-1/(total_episodes*total_control_point)*episode**2+1, 0.01)
             # 保存检查点
             save_DQN_data(writer, replay_buffer, return_list, time_list, 
                           seed_list, ckpt_path, epoch, episode, agent.epsilon,
