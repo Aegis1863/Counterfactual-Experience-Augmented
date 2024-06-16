@@ -158,7 +158,8 @@ if __name__ == '__main__':
     update_interval = 50  # 若干回合更新一次目标网络
     minimal_size = 500  # 最小经验数
     batch_size = 128
-
+    total_control_point = 0.3
+    
     # 神经网络相关
     lr = 2e-3
     state_dim = torch.multiply(*env.observation_space.shape)
@@ -212,7 +213,7 @@ if __name__ == '__main__':
             )
         
         return_list, train_time = train_DQN(env, agent, args.writer, s_epoch, total_epoch, s_episode,
-                                            args.episodes, replay_buffer, minimal_size, 
+                                            args.episodes, total_control_point, replay_buffer, minimal_size, 
                                             batch_size, return_list, time_list, seed_list, seed, 
                                             CKP_PATH)
 
