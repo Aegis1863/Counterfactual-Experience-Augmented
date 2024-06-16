@@ -333,23 +333,12 @@ def train_DQN(
                 state = next_state
                 episode_return += reward
                 if replay_buffer.size() > minimal_size:
-                    if agent.sta:  # 在线训练
-                        vae_sample = replay_buffer.return_all_samples()
-                        s = torch.tensor(vae_sample[0])
-                        a = torch.tensor(vae_sample[1])
-                        ns = torch.tensor(vae_sample[3])
-                        vae_batch = max(s.shape[0] // 600, 1)
-                        agent.train_cvae(s, a, ns, False, vae_batch)  # 训练 vae
-                        quality = agent.sta.generate_test(32, len(a.unique()))  # 当前模型生成图像的分类质量
-                        
-                        b_s, b_a, b_r, b_ns, b_d, b_t = counterfactual_exp_expand(replay_buffer, agent.sta, batch_size, len(a.unique()))
-                    else:
-                        b_s, b_a, b_r, b_ns, b_d, b_t = replay_buffer.sample(batch_size)
+                    b_s, b_a, b_r, b_ns, b_d, b_t = sample_exp(agent, replay_buffer, batch_size)
                     transition_dict = {
                         'states': b_s, 'actions': b_a, 'next_states': b_ns,
                         'rewards': b_r, 'dones': b_d, 'truncated': b_t,
                     }
-                    agent.update(transition_dict)  # ! 策略训练
+                    agent.update(transition_dict)
                 if episode_return > best_score:
                     best_weight = agent.q_net.state_dict()
                     best_score = episode_return
@@ -373,6 +362,19 @@ def train_DQN(
     total_time = (time.time() - start_time) // 60
     print("\033[32m[ 总耗时 ]\033[0m %d分钟" % total_time)
     return return_list, total_time
+
+def sample_exp(agent, replay_buffer, batch_size):
+    if agent.sta:  # 在线训练
+        vae_sample = replay_buffer.return_all_samples()
+        s = torch.tensor(vae_sample[0])
+        a = torch.tensor(vae_sample[1])
+        ns = torch.tensor(vae_sample[3])
+        vae_batch = max(s.shape[0] // 600, 1)
+        agent.train_cvae(s, a, ns, False, vae_batch)  # 训练 vae
+        quality = agent.sta.generate_test(32, len(a.unique()))  # 当前模型生成图像的分类质量
+        if agent.sta.quality > 0.2:
+            return counterfactual_exp_expand(replay_buffer, agent.sta, batch_size, len(a.unique()))
+    return replay_buffer.sample(batch_size)
 
 
 def save_DQN_data(writer, replay_buffer, return_list, time_list, 
