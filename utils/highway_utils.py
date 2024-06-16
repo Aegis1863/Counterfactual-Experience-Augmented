@@ -318,6 +318,7 @@ def train_DQN(
         seed: int,
         ckpt_path: str,):
     start_time = time.time()
+    episode_time = time.time()
     # fake_pool = ReplayBuffer(replay_buffer.capacity)
     best_score = -1e10  # 初始化最佳分数
     return_list = [] if not return_list else return_list

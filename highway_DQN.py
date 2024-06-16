@@ -182,6 +182,7 @@ if __name__ == '__main__':
             cvae = CVAE(state_dim, action_dim, state_dim)  # 在线训练
     else:
         cvae = None
+        distance_threshold = None
 
     # 任务相关
     system_type = sys.platform  # 操作系统
