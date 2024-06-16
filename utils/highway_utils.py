@@ -318,7 +318,6 @@ def train_DQN(
         model_name: str):
     start_time = time.time()
     best_score = -100  # 初始化最佳分数
-    return_list = []
     for epoch in range(s_epoch, total_epoch):
         for episode in range(s_episode, total_episodes):
             episode_begin_time = time.time()
