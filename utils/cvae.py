@@ -52,12 +52,13 @@ class CVAE(nn.Module):
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         if not isinstance(action_space, list):
             action_space = int(action_space)
+            # (batch // action_space) 表示每个动作生成多少个
             conditions = torch.tensor([[i] * (batch // action_space) for i in range(action_space)]).view(-1)
             one_hot_conditions = torch.eye(action_space)[conditions].to(device)
         else:  # TODO 连续动作空间需要测试
             conditions = torch.FloatTensor(batch//4).uniform_(*action_space).repeat(4).sort()[0]
         with torch.no_grad():
-            sample = torch.randn(batch, self.latent_dim).to(device)
+            sample = torch.randn(conditions.shape[0], self.latent_dim).to(device)
             generated = self.decode(sample, one_hot_conditions).cpu()
         quality = silhouette_score(generated, conditions)  # 轮廓系数
         self.quality = quality

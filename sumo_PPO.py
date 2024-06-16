@@ -197,7 +197,7 @@ if __name__ == '__main__':
             cvae = torch.load(f'model/cvae/{mission}/{args.sta_kind}.pt', map_location=device)
         else:
             print(f'==> 在线训练 cvae模型')
-            cvae = CVAE(state_dim - 5, action_dim, state_dim - 5)  # 在线训练, sumo状态维度要减去5，前五个没有帮助
+            cvae = CVAE(state_dim - 5, action_dim, state_dim - 5)
     else:
         cvae = None
     

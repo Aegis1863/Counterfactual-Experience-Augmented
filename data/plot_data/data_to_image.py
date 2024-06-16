@@ -18,7 +18,7 @@ colors = ['#e5071a', '#00CD00', '#1e90ff', '#FF9900', '#fd79a8', '#8074b2', '#63
 
 # -------------------
 # algs = ['PPO', 'PPO_B_0', 'PPO_B_500', 'PPO_B_1k']  # * 给出算法文件夹名
-algs = ['PPO', 'PPO~cvae~expert', 'PPO~KeepTrain~cvae~expert', 'PPO~KeepTrian~detach~cvae~expert']  # * 给出算法文件夹名
+algs = ['PPO', 'PPO~cvae', 'PPO~cvae~expert', 'PPO~cvae~regular']  # * 给出算法文件夹名
 mission = 'sumo'
 target_index = 'Return'
 # -------------------
