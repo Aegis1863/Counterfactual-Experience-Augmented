@@ -318,7 +318,6 @@ def train_DQN(
         seed: int,
         ckpt_path: str,):
     start_time = time.time()
-    episode_time = time.time()
     # fake_pool = ReplayBuffer(replay_buffer.capacity)
     best_score = -1e10  # 初始化最佳分数
     return_list = [] if not return_list else return_list
@@ -356,10 +355,10 @@ def train_DQN(
                           seed_list, ckpt_path, epoch, episode, agent.epsilon,
                           best_weight, seed)
             if episode % 40 == 0:
-                episode_time = time.time() - episode_time
-                episode_time = time.time()
+                episode_time = (time.time() - episode_time) / 60
                 print('\033[32m[ %d, <%d/%d>, %.2f min ]\033[0m: return: %.2f, epsilon: %.2f, pool_size: %d'
                     % (seed, episode+1, total_episodes, episode_time, np.mean(return_list[-40:]), agent.epsilon, replay_buffer.size()))
+                episode_time = time.time()
             s_episode = 0
     env.close()
     agent.q_net.load_state_dict(best_weight)  # 应用最佳权重
@@ -367,7 +366,7 @@ def train_DQN(
     print("\033[32m[ 总耗时 ]\033[0m %d分钟" % total_time)
     return return_list, total_time
 
-def sample_exp(agent, replay_buffer, batch_size):
+def sample_exp(agent, replay_buffer, batch_size, distance_threshold):
     if agent.sta and agent.sta.quality < 0.7:
         vae_sample = replay_buffer.return_all_samples()
         s = torch.tensor(vae_sample[0])
@@ -378,7 +377,7 @@ def sample_exp(agent, replay_buffer, batch_size):
             agent.train_cvae(s, a, ns, False, vae_batch)  # 训练 vae
             quality = agent.sta.generate_test(32, len(a.unique()))  # 当前模型生成图像的分类质量
         if agent.sta.quality > 0.3 and replay_buffer.size() > 2000:
-            return counterfactual_exp_expand(replay_buffer, agent.sta, batch_size, len(a.unique()), 0.2)
+            return counterfactual_exp_expand(replay_buffer, agent.sta, batch_size, len(a.unique()), agent.distance_threshold)
         else:
             return replay_buffer.sample(batch_size)
     return replay_buffer.sample(batch_size)
