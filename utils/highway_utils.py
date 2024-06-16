@@ -367,7 +367,7 @@ def train_DQN(
     return return_list, total_time
 
 def sample_exp(agent, replay_buffer, batch_size, distance_threshold):
-    if agent.sta and agent.sta.quality < 0.7:
+    if agent.sta:
         vae_sample = replay_buffer.return_all_samples()
         s = torch.tensor(vae_sample[0])
         a = torch.tensor(vae_sample[1])
