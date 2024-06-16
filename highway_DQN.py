@@ -126,7 +126,7 @@ class DQN:
     
     def predict_next_state(self, state, action):
         with torch.no_grad():
-            action = torch.nn.functional.one_hot(action, len(action.unique()))
+            action = torch.nn.functional.one_hot(action, action_dim)
             sample = torch.randn(state.shape).to(device)  # 随机采样的
             generated = self.sta.decode(sample, action)
         pre_next_state = torch.concat([state + generated], dim=-1)
