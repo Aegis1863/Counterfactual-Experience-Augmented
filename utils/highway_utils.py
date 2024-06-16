@@ -367,7 +367,7 @@ def train_DQN(
     print("\033[32m[ 总耗时 ]\033[0m %d分钟" % total_time)
     return return_list, total_time
 
-def sample_exp(agent, replay_buffer, batch_size, distance_threshold):
+def sample_exp(agent, replay_buffer, batch_size):
     if agent.sta:
         vae_sample = replay_buffer.return_all_samples()
         s = torch.tensor(vae_sample[0])
