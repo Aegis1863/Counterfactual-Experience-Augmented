@@ -166,12 +166,12 @@ if __name__ == '__main__':
     action_dim = env.action_space.n
 
     # VAE
-    
+    '''
     # ---- 调试用，上线删除 ----
     args.sta = True
     args.sta_kind = 'regular'
     # ------------------------
-    
+    '''
     if args.sta:
         args.model_name = args.model_name + '~' + 'cvae'
         if args.sta_kind:  # 读取预训练模型
