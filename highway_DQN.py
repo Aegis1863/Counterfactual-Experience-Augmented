@@ -14,6 +14,7 @@ from utils.cvae import CVAE, cvae_train
 import matplotlib.pyplot as plt
 import seaborn as sns
 import wandb
+from tqdm import trange, tqdm
 import argparse
 import warnings
 warnings.filterwarnings('ignore')
@@ -27,7 +28,7 @@ parser.add_argument('-o', '--online', action="store_true", help='是否上传wan
 parser.add_argument('-e', '--episodes', default=1600, type=int, help='运行回合数')
 parser.add_argument('-b', '--buffer_size', default=25000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
-parser.add_argument('--end_seed', default=48, type=int, help='结束种子')
+parser.add_argument('--end_seed', default=42, type=int, help='结束种子')
 args = parser.parse_args()
 
 if args.writer == 2:
@@ -165,12 +166,12 @@ if __name__ == '__main__':
     action_dim = env.action_space.n
 
     # VAE
-    '''
+    
     # ---- 调试用，上线删除 ----
     args.sta = True
     args.sta_kind = 'regular'
     # ------------------------
-    '''
+    
     if args.sta:
         args.model_name = args.model_name + '~' + 'cvae'
         if args.sta_kind:  # 读取预训练模型
@@ -188,7 +189,6 @@ if __name__ == '__main__':
     print('device:', device)
 
     # * ----------------------- 训练 ----------------------------
-
     for seed in range(args.begin_seed, args.end_seed + 1):
         CKP_PATH = f'ckpt/{"/".join(args.model_name.split('_'))}/{seed}/{system_type}.pt'
         random.seed(seed)
@@ -222,5 +222,5 @@ if __name__ == '__main__':
         plt.title(f'{args.model_name}, training time: {train_time} min')
         plt.xlabel('Episode')
         plt.ylabel('Return')
-        plt.savefig(f'image/tmp/{mission}_{args.model_name}_{system_type}.pdf')
+        plt.savefig(f'image/tmp/{mission}/{model_name}_{system_type}.pdf')
         plt.close()

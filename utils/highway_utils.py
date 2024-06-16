@@ -13,6 +13,7 @@ import os
 import random
 import numpy as np
 import torch
+import seaborn as sns
 
 
 def read_ckp(ckp_path: str, agent: object, model_name: str, buffer_size: int = 0):
@@ -316,12 +317,12 @@ def train_DQN(
         seed: int,
         ckpt_path: str,):
     start_time = time.time()
+    episode_time = time.time()
     # fake_pool = ReplayBuffer(replay_buffer.capacity)
     best_score = -1e10  # 初始化最佳分数
     return_list = [] if not return_list else return_list
     for epoch in range(s_epoch, total_epoch):
         for episode in range(s_episode, total_episodes):
-            episode_begin_time = time.time()
             episode_return = 0
             state, done, truncated = env.reset()[0], False, False
             state = state.reshape(-1)
@@ -353,7 +354,8 @@ def train_DQN(
                           seed_list, ckpt_path, epoch, episode, agent.epsilon,
                           best_weight, seed)
             if episode % 40 == 0:
-                episode_time = (time.time() - episode_begin_time) / 6
+                episode_time = time.time() - episode_time
+                episode_time = time.time()
                 print('\033[32m[ %d, <%d/%d>, %.2f min ]\033[0m: return: %.2f, epsilon: %.2f, pool_size: %d'
                     % (seed, episode+1, total_episodes, episode_time, np.mean(return_list[-40:]), agent.epsilon, replay_buffer.size()))
             s_episode = 0
@@ -364,16 +366,19 @@ def train_DQN(
     return return_list, total_time
 
 def sample_exp(agent, replay_buffer, batch_size):
-    if agent.sta:  # 在线训练
+    if agent.sta and agent.sta.quality < 0.7:
         vae_sample = replay_buffer.return_all_samples()
         s = torch.tensor(vae_sample[0])
         a = torch.tensor(vae_sample[1])
         ns = torch.tensor(vae_sample[3])
-        vae_batch = max(s.shape[0] // 600, 1)
-        agent.train_cvae(s, a, ns, False, vae_batch)  # 训练 vae
-        quality = agent.sta.generate_test(32, len(a.unique()))  # 当前模型生成图像的分类质量
-        if agent.sta.quality > 0.2:
-            return counterfactual_exp_expand(replay_buffer, agent.sta, batch_size, len(a.unique()))
+        if agent.sta.quality < 0.7:  # 在线训练
+            vae_batch = max(s.shape[0] // 600, 1)
+            agent.train_cvae(s, a, ns, False, vae_batch)  # 训练 vae
+            quality = agent.sta.generate_test(32, len(a.unique()))  # 当前模型生成图像的分类质量
+        if agent.sta.quality > 0.3 and replay_buffer.size() > 2000:
+            return counterfactual_exp_expand(replay_buffer, agent.sta, batch_size, len(a.unique()), 0.2)
+        else:
+            return replay_buffer.sample(batch_size)
     return replay_buffer.sample(batch_size)
 
 
@@ -429,7 +434,14 @@ class ReplayBuffer:
         return np.array(state), action, reward, np.array(next_state), done, truncated
     
     
-def counterfactual_exp_expand(replay_buffer, sta, batch_size, action_space_size):
+def counterfactual_exp_expand(replay_buffer, sta, batch_size, action_space_size, distance_threshold):
+    '''
+    replay_buffer: 经验池
+    sta: cvae
+    batch_size: 抽多少经验
+    action_space_size: 动作空间大小
+    distance_threshold: 经验差距阈值，差距太大的匹配经验被放弃
+    '''
     # 抽样batch_size组真实经验
     b_s, b_a, b_r, b_ns, b_d, b_t = [torch.tensor(i) for i in replay_buffer.sample(batch_size)]
     
@@ -442,10 +454,10 @@ def counterfactual_exp_expand(replay_buffer, sta, batch_size, action_space_size)
         counterfactual_actions.append([i for i in range(action_space_size) if i != a])
     counterfactual_actions = torch.tensor(counterfactual_actions).flatten()
 
-    one_hot_actions = torch.nn.functional.one_hot(counterfactual_actions, num_classes=action_space_size)
+    one_hot_cf_actions = torch.nn.functional.one_hot(counterfactual_actions, num_classes=action_space_size)
 
     # 生成反事实状态转移向量
-    diff_state = sta.inference(one_hot_actions)
+    diff_state = sta.inference(one_hot_cf_actions)
 
     # 扩展状态以匹配反事实状态转移
     expand_b_s = b_s.repeat_interleave(action_space_size - 1, dim=0)
@@ -455,23 +467,33 @@ def counterfactual_exp_expand(replay_buffer, sta, batch_size, action_space_size)
     all_s, all_a, all_r, all_ns, all_d, all_t = [torch.tensor(i) for i in replay_buffer.return_all_samples()]
 
     # 将真实经验和虚拟经验拼接成向量
-    real_exp = torch.cat((all_s, torch.nn.functional.one_hot(all_a, num_classes=action_space_size), all_ns), dim=1)
-    fake_exp = torch.cat((expand_b_s, one_hot_actions, b_ns_prime), dim=1)
-
+    # real_exp = torch.cat((all_s, torch.nn.functional.one_hot(all_a, num_classes=action_space_size), all_ns), dim=1)
+    # fake_exp = torch.cat((expand_b_s, one_hot_actions, b_ns_prime), dim=1)
+    
     # 计算虚拟经验与真实经验的距离并找到最匹配的真实经验
-    distances = torch.cdist(fake_exp, real_exp)
+    # distances = torch.cdist(fake_exp, real_exp)
+    distances = torch.cdist(b_ns_prime, all_ns)
     min_indices = torch.argmin(distances, dim=1)
-    b_r_prime = all_r[min_indices]
+    min_distances = distances[torch.arange(distances.size(0)), min_indices]
 
+    # 筛选出距离小于阈值的虚拟经验
+    close_matches = min_distances < distance_threshold
+    valid_min_indices = min_indices[close_matches]
+    
+    valid_fake_s = expand_b_s[close_matches]
+    valid_fake_r = all_r[valid_min_indices]
+    valid_fake_a = one_hot_cf_actions[close_matches].argmax(dim=1)
+    valid_fake_ns = b_ns_prime[close_matches]
+    
     # 虚拟经验的其他标记
-    b_d_prime = torch.zeros_like(b_r_prime, dtype=torch.bool)
-    b_t_prime = torch.zeros_like(b_r_prime, dtype=torch.bool)
+    b_d_prime = torch.zeros_like(valid_fake_r, dtype=torch.bool)
+    b_t_prime = torch.zeros_like(valid_fake_r, dtype=torch.bool)
 
     # 组合虚拟经验与真实经验
-    augmented_s = torch.cat((b_s, expand_b_s), dim=0)
-    augmented_a = torch.cat((b_a, counterfactual_actions), dim=0)
-    augmented_r = torch.cat((b_r, b_r_prime), dim=0)
-    augmented_ns = torch.cat((b_ns, b_ns_prime), dim=0)
+    augmented_s = torch.cat((b_s, valid_fake_s), dim=0)
+    augmented_a = torch.cat((b_a, valid_fake_a), dim=0)
+    augmented_r = torch.cat((b_r, valid_fake_r), dim=0)
+    augmented_ns = torch.cat((b_ns, valid_fake_ns), dim=0)
     augmented_d = torch.cat((b_d, b_d_prime), dim=0)
     augmented_t = torch.cat((b_t, b_t_prime), dim=0)
 
