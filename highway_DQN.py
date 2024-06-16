@@ -28,7 +28,7 @@ parser.add_argument('-o', '--online', action="store_true", help='是否上传wan
 parser.add_argument('-e', '--episodes', default=1600, type=int, help='运行回合数')
 parser.add_argument('-b', '--buffer_size', default=25000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
-parser.add_argument('--end_seed', default=42, type=int, help='结束种子')
+parser.add_argument('--end_seed', default=48, type=int, help='结束种子')
 args = parser.parse_args()
 
 if args.writer == 2:
@@ -57,7 +57,7 @@ class DQN:
     ''' DQN算法,包括Double DQN '''
     
     def __init__(self, state_dim, hidden_dim, action_dim, learning_rate,
-                 gamma, epsilon, update_interval, sta, device,):
+                 gamma, epsilon, update_interval, sta, distance_threshold=None, device='cpu'):
         
         self.action_dim = action_dim
         self.q_net = VAnet(state_dim, hidden_dim, self.action_dim).to(device)
@@ -70,10 +70,12 @@ class DQN:
         self.device = device
         
         if sta:
+            self.distance_threshold = distance_threshold
             self.sta = cvae.to(device)
             self.sta_optimizer = torch.optim.Adam(self.sta.parameters(), lr=1e-3)
         else:
             self.sta = None
+            self.distance_threshold = None
 
 
     def take_action(self, state):
@@ -141,11 +143,6 @@ if __name__ == '__main__':
         "lanes_count": 4,
         "vehicles_density": 2,
         "duration": 100,
-        # "collision_reward": -30,
-        # "right_lane_reward": 0.2,
-        # "high_speed_reward": 0,
-        # "offroad_terminal": False,
-        # "reward_speed_range": [20, 30],
     })
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     mission = args.model_name.split('_')[0]
@@ -175,6 +172,7 @@ if __name__ == '__main__':
     '''
     if args.sta:
         args.model_name = args.model_name + '~' + 'cvae'
+        distance_threshold = 0.1  # ! 控制虚拟经验与真实经验的差距
         if args.sta_kind:  # 读取预训练模型
             print(f'==> 读取{args.sta_kind} cvae模型')
             args.model_name = args.model_name + '~' + args.sta_kind
@@ -195,7 +193,7 @@ if __name__ == '__main__':
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
-        agent = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon, update_interval, cvae, device)
+        agent = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon, update_interval, cvae, distance_threshold, device)
 
         (s_epoch, s_episode, return_list, 
         time_list, seed_list, replay_buffer) = read_ckp(CKP_PATH, agent,  args.model_name, args.buffer_size)
