@@ -19,15 +19,15 @@ import warnings
 warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='DQN 任务')
-parser.add_argument('--model_name', default="highway_DQN~test", type=str, help='模型名称, 任务_模型')
+parser.add_argument('--model_name', default="highway_DQN", type=str, help='模型名称, 任务_模型')
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
 parser.add_argument('-e', '--episodes', default=1600, type=int, help='运行回合数')
 parser.add_argument('-b', '--buffer_size', default=25000, type=int, help='经验池大小')
-parser.add_argument('--begin_seed', default=43, type=int, help='起始种子')
-parser.add_argument('--end_seed', default=43, type=int, help='结束种子')
+parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
+parser.add_argument('--end_seed', default=48, type=int, help='结束种子')
 args = parser.parse_args()
 
 if args.writer == 2:
