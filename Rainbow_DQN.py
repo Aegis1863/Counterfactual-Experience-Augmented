@@ -35,7 +35,7 @@ parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0
 parser.add_argument('-e', '--step', default=20000, type=int, help='运行回合数')
 parser.add_argument('-b', '--buffer_size', default=20000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
-parser.add_argument('--end_seed', default=44, type=int, help='结束种子')
+parser.add_argument('--end_seed', default=46, type=int, help='结束种子')
 args = parser.parse_args()
 
 def save_DQN_data(replay_buffer, return_list, time_list, 
@@ -612,6 +612,7 @@ class DQNAgent:
         else:
             self.sta = None
             self.distance_threshold = None
+        self.fake_exp_count = 0
         
         # PER
         # memory for 1-step Learning
@@ -665,8 +666,11 @@ class DQNAgent:
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, np.float64, bool]:
         """Take an action and return the response of the env."""
         # ! 反事实经验拓展 # TODO
-        if self.sta and len(self.memory) > self.batch_size and len(self.memory) <= args.buffer_size:
+        if self.sta and len(self.memory) > self.batch_size and \
+            len(self.memory) <= args.buffer_size and \
+                self.fake_exp_count % self.batch_size == 0:
             self.memory = counterfactual_exp_expand(self.memory, self.sta, 0, 5, 0.1)
+            self.fake_exp_count += 1
         
         next_state, reward, terminated, truncated, _ = self.env.step(action)
         next_state = next_state.reshape(-1)
@@ -928,5 +932,7 @@ for seed in range(args.begin_seed, args.end_seed + 1):
     plt.title(f'{args.model_name}, training time: {train_time} min')
     plt.xlabel('Episode')
     plt.ylabel('Return')
-    plt.savefig(f'image/tmp/{mission}/{args.symbol}_{model_name}_{system_type}.pdf')
+    fig_path = f'image/tmp/{mission}/{args.symbol}_{model_name}_{system_type}.pdf'
+    os.makedirs(fig_path) if not os.path.exists(fig_path) else None
+    plt.savefig(fig_path)
 plt.close()
