@@ -167,8 +167,9 @@ if __name__ == '__main__':
     # VAE
     
     # ---- 调试用，上线删除 ----
-    args.sta = True
-    args.sta_kind = 'regular'
+    if sys.platform != 'linux':
+        args.sta = True
+        args.sta_kind = 'regular'
     # ------------------------
     
     if args.sta:
