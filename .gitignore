@@ -12,3 +12,4 @@ tmp/
 api_key.txt
 *.sh
 server_log/
+ckpt/
