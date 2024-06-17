@@ -28,11 +28,11 @@ warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='DQN 任务')
 parser.add_argument('--model_name', default="highway_RDQN", type=str, help='模型名称, 任务_模型')
-parser.add_argument('--symbol', default=None, type=str, help='特殊唯一标识')
+parser.add_argument('--symbol', default='Normal', type=str, help='特殊唯一标识')
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
-parser.add_argument('-e', '--step', default=20000, type=int, help='运行回合数')
+parser.add_argument('-e', '--step', default=1000, type=int, help='运行回合数')
 parser.add_argument('-b', '--buffer_size', default=20000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=46, type=int, help='结束种子')
@@ -765,7 +765,7 @@ class DQNAgent:
                     score = 0
                     pbar.set_postfix({
                         # 'Step': num_frames // 400 + 1,
-                        'scores': round(scores[-1], 2),
+                        'scores': round(np.mean(scores[-20:]), 2),
                         'Pool size': len(self.memory)
                     })
                     time_list.append(time.strftime('%m-%d %H:%M:%S', time.localtime()))
@@ -875,13 +875,15 @@ class DQNAgent:
         """Plot the training progresses."""
         plt.figure(figsize=(10, 5))
         plt.subplot(121)
+        plt.xlabel('Step')
+        plt.ylabel('Return')
         plt.title('frame %s. score: %s' % (frame_idx, np.mean(scores[-10:])))
         plt.plot(scores)
         plt.subplot(122)
         plt.title('loss')
         plt.plot(losses)
         # plt.show()
-        plt.savefig(f'image/tmp/{mission}/return_and_loss/{args.symbol}_{model_name}_{system_type}.pdf')
+        plt.savefig(f'image/tmp/{mission}/{args.symbol}/{model_name}_{system_type}.pdf')
 
 seed = 42
 # environment
@@ -911,9 +913,9 @@ model_name = args.model_name.split('_')[1]
 # VAE
 
 # ---- 调试用，上线删除 ----
-# if sys.platform != 'linux':
-#     args.sta = True
-#     args.sta_kind = 'regular'
+if sys.platform != 'linux':
+    args.sta = True
+    args.sta_kind = 'regular'
 # ------------------------
 
 system_type = sys.platform  # 操作系统
@@ -921,18 +923,10 @@ system_type = sys.platform  # 操作系统
 for seed in range(args.begin_seed, args.end_seed + 1):
     begin_time = time.time()
     seed_torch(seed)
-    CKP_PATH = f'ckpt/{"/".join(args.model_name.split('_'))}/{seed}/{system_type}.pt'
+    CKP_PATH = f'ckpt/{"/".join(args.model_name.split("_"))}_{args.symbol}/{seed}/{system_type}.pt'
     # train
     agent = DQNAgent(env, memory_size, batch_size, target_update, seed, n_step=1)
     scores, losses = agent.train(args.step)
     
     train_time = (time.time() - begin_time) / 60
     print('总时间: %.2f min'%train_time)
-    sns.lineplot(scores)
-    plt.title(f'{args.model_name}, training time: {train_time} min')
-    plt.xlabel('Episode')
-    plt.ylabel('Return')
-    fig_path = f'image/tmp/{mission}/{args.symbol}_{model_name}_{system_type}.pdf'
-    os.makedirs(fig_path) if not os.path.exists(fig_path) else None
-    plt.savefig(fig_path)
-plt.close()
