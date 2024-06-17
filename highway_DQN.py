@@ -28,7 +28,7 @@ parser.add_argument('-o', '--online', action="store_true", help='是否上传wan
 parser.add_argument('-e', '--episodes', default=1600, type=int, help='运行回合数')
 parser.add_argument('-b', '--buffer_size', default=25000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
-parser.add_argument('--end_seed', default=48, type=int, help='结束种子')
+parser.add_argument('--end_seed', default=44, type=int, help='结束种子')
 args = parser.parse_args()
 
 if args.writer == 2:
@@ -164,15 +164,15 @@ if __name__ == '__main__':
     action_dim = env.action_space.n
 
     # VAE
-    '''
+    
     # ---- 调试用，上线删除 ----
-    args.sta = True
-    args.sta_kind = 'regular'
+    # args.sta = True
+    # args.sta_kind = 'regular'
     # ------------------------
-    '''
+    
     if args.sta:
         args.model_name = args.model_name + '~' + 'cvae'
-        distance_threshold = 0.1  # ! 控制虚拟经验与真实经验的差距
+        distance_threshold = 0.05  # ! 控制虚拟经验与真实经验的差距
         if args.sta_kind:  # 读取预训练模型
             print(f'==> 读取{args.sta_kind} cvae模型')
             args.model_name = args.model_name + '~' + args.sta_kind
