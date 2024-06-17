@@ -21,11 +21,12 @@ warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='DQN 任务')
 parser.add_argument('--model_name', default="highway_DQN", type=str, help='模型名称, 任务_模型')
+parser.add_argument('--symbol', default=None, type=str, help='特殊唯一标识')
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
-parser.add_argument('-e', '--episodes', default=1600, type=int, help='运行回合数')
+parser.add_argument('-e', '--episodes', default=800, type=int, help='运行回合数')
 parser.add_argument('-b', '--buffer_size', default=25000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=44, type=int, help='结束种子')
@@ -102,7 +103,7 @@ class DQN:
         max_action = self.q_net(next_states).max(1)[1].view(-1, 1)
         
         # * 技巧一
-        if self.sta and self.sta.quality > 0.2:
+        if  False:  # self.sta and self.sta.quality > 0.2:
             pre_next_state = self.predict_next_state(states, actions.squeeze())
             target_q1 = self.target_q_net(pre_next_state).detach()
             target_q2 = self.target_q_net(next_states).detach()
@@ -155,7 +156,7 @@ if __name__ == '__main__':
     update_interval = 50  # 若干回合更新一次目标网络
     minimal_size = 500  # 最小经验数
     batch_size = 128
-    total_control_point = 0.3
+    total_control_point = 0.4
     
     # 神经网络相关
     lr = 2e-3
@@ -166,8 +167,8 @@ if __name__ == '__main__':
     # VAE
     
     # ---- 调试用，上线删除 ----
-    # args.sta = True
-    # args.sta_kind = 'regular'
+    args.sta = True
+    args.sta_kind = 'regular'
     # ------------------------
     
     if args.sta:
@@ -222,5 +223,5 @@ if __name__ == '__main__':
         plt.title(f'{args.model_name}, training time: {train_time} min')
         plt.xlabel('Episode')
         plt.ylabel('Return')
-        plt.savefig(f'image/tmp/{mission}/{model_name}_{system_type}.pdf')
+        plt.savefig(f'image/tmp/{mission}/{args.symbol}_{model_name}_{system_type}.pdf')
         plt.close()

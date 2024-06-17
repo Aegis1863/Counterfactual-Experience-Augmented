@@ -350,7 +350,7 @@ def train_DQN(
             seed_list.append(seed)
             # 调整epsilon
             # ! total_control_point=0.3 表示在整个训练的 0.3 处模型取得完全控制
-            agent.epsilon = max(-1/(total_episodes*total_control_point)*episode**2+1, 0.01)
+            agent.epsilon = max(-(total_episodes*total_control_point)**(-2)*episode**2+1, 0.01)
             # 保存检查点
             save_DQN_data(writer, replay_buffer, return_list, time_list, 
                           seed_list, ckpt_path, epoch, episode, agent.epsilon,
