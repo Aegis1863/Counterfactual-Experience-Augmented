@@ -8,10 +8,10 @@ import sys
 import random
 from collections import deque
 from typing import Deque, Dict, List, Tuple
-import sumo_rl
 import gymnasium as gym
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -19,23 +19,63 @@ import torch.optim as optim
 from torch.nn.utils import clip_grad_norm_
 from utils.segment_tree import MinSegmentTree, SumSegmentTree
 from utils.cvae import CVAE, cvae_train
+import seaborn as sns
+import time
 from tqdm import tqdm
 import argparse
 import warnings
 warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='DQN 任务')
-parser.add_argument('--model_name', default="highway_DQN", type=str, help='模型名称, 任务_模型')
+parser.add_argument('--model_name', default="highway_RDQN", type=str, help='模型名称, 任务_模型')
 parser.add_argument('--symbol', default=None, type=str, help='特殊唯一标识')
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
-parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
-parser.add_argument('-e', '--episodes', default=1000, type=int, help='运行回合数')
-parser.add_argument('-b', '--buffer_size', default=25000, type=int, help='经验池大小')
+parser.add_argument('-e', '--step', default=20000, type=int, help='运行回合数')
+parser.add_argument('-b', '--buffer_size', default=20000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=44, type=int, help='结束种子')
 args = parser.parse_args()
+
+def save_DQN_data(replay_buffer, return_list, time_list, 
+                  seed_list, ckpt_path, epoch, episode, epsilon,
+                  best_weight, seed):
+    path = "/".join(ckpt_path.split('/')[:-1])
+    if not os.path.exists(path):
+        os.makedirs(path)
+    # 训练权重存档
+    torch.save({
+        'epoch': epoch,
+        'episode': episode,
+        'best_weight': best_weight,
+        'epsilon': epsilon,
+        "return_list": return_list,
+        "time_list": time_list,
+        "seed_list": seed_list,
+        "replay_buffer": replay_buffer,
+    }, ckpt_path)
+
+    # 绘图数据存档
+    save_plot_data(return_list, time_list, seed_list, ckpt_path, seed, len(replay_buffer))
+
+def save_plot_data(return_list, time_list, seed_list, ckpt_path, seed, pool_size=None):
+    system_type = sys.platform  # 操作系统标识
+    # ckpt/SAC/big-intersection_42_win32.pt
+    mission_name = ckpt_path.split('/')[1]
+    alg_name = ckpt_path.split('/')[2]  # 在本项目路径命名中，第二个是算法名
+    file_path = f"data/plot_data/{mission_name}/{alg_name}"  # data/plot_data/highway/SAC/
+    if not os.path.exists(file_path):  # 路径不存在时创建
+        os.makedirs(file_path)
+    log_path = f"{file_path}/{seed}_{system_type}.csv"
+    return_save = pd.DataFrame()
+    return_save["Algorithm"] = [alg_name] * len(return_list)  # 算法名称
+    return_save["Seed"] = seed_list
+    return_save["Return"] = return_list
+    if pool_size:
+        return_save["Pool size"] = pool_size
+    return_save["Log time"] = time_list
+    return_save.to_csv(log_path, index=False, encoding='utf-8-sig')
 
 def counterfactual_exp_expand(replay_buffer, sta, beta, action_space_size, distance_threshold):
     '''
@@ -48,7 +88,8 @@ def counterfactual_exp_expand(replay_buffer, sta, beta, action_space_size, dista
     # 抽样 batch_size 组真实经验
     samples = replay_buffer.sample_batch(beta)
     b_s, b_ns, b_a, b_r, b_d = samples['obs'], samples['next_obs'], samples['acts'], samples['rews'], samples['done']
-
+    b_s, b_ns, b_a, b_r, b_d = [torch.tensor(i) for i in [b_s, b_ns, b_a, b_r, b_d]]
+    
     # 生成反事实动作和其独热向量表示
     counterfactual_actions = []
     for a in b_a:
@@ -66,8 +107,9 @@ def counterfactual_exp_expand(replay_buffer, sta, beta, action_space_size, dista
     b_ns_prime = expand_b_s + diff_state
 
     # ? 读取所有真实经验
-    all_s, all_ns, all_a, all_r, all_d, _, _ = replay_buffer.retrieve_all_experiences()
-
+    all_samples = replay_buffer.retrieve_all_experiences()
+    all_ns, all_r = torch.tensor(all_samples['next_obs']), torch.tensor(all_samples['rews'])
+    
     # 将真实经验和虚拟经验拼接成向量
     # real_exp = torch.cat((all_s, torch.nn.functional.one_hot(all_a, num_classes=action_space_size), all_ns), dim=1)
     # fake_exp = torch.cat((expand_b_s, one_hot_actions, b_ns_prime), dim=1)
@@ -82,22 +124,16 @@ def counterfactual_exp_expand(replay_buffer, sta, beta, action_space_size, dista
     close_matches = min_distances < distance_threshold
     valid_min_indices = min_indices[close_matches]
     
-    valid_fake_s = expand_b_s[close_matches]
-    valid_fake_r = all_r[valid_min_indices]
-    valid_fake_a = one_hot_cf_actions[close_matches].argmax(dim=1)
-    valid_fake_ns = b_ns_prime[close_matches]
-    
+    valid_fake_s = expand_b_s[close_matches].numpy()
+    valid_fake_r = all_r[valid_min_indices].numpy()
+    valid_fake_a = one_hot_cf_actions[close_matches].argmax(dim=1).numpy()
+    valid_fake_ns = b_ns_prime[close_matches].numpy()
     # 虚拟经验的其他标记
-    b_d_prime = torch.zeros_like(valid_fake_r, dtype=torch.bool)
-
-    # 组合虚拟经验与真实经验
-    augmented_s = torch.cat((b_s, valid_fake_s), dim=0)
-    augmented_a = torch.cat((b_a, valid_fake_a), dim=0)
-    augmented_r = torch.cat((b_r, valid_fake_r), dim=0)
-    augmented_ns = torch.cat((b_ns, valid_fake_ns), dim=0)
-    augmented_d = torch.cat((b_d, b_d_prime), dim=0)
-
-    return augmented_s, augmented_a, augmented_r, augmented_ns, augmented_d
+    b_d_prime = np.zeros_like(valid_fake_r)
+    # 更新经验池
+    for s, a, r, ns, d in zip(valid_fake_s, valid_fake_a, valid_fake_r, valid_fake_ns, b_d_prime):
+        replay_buffer.store(s, a, r, ns, d)
+    return replay_buffer
 
 
 class ReplayBuffer:
@@ -341,7 +377,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
     def sample_batch(self, beta: float = 0.4) -> Dict[str, np.ndarray]:
         """Sample a batch of experiences."""
         assert len(self) >= self.batch_size
-        assert beta > 0
+        assert beta >= 0
         
         indices = self._sample_proportional()
         
@@ -564,17 +600,17 @@ class DQNAgent:
         # * CVAE
         if args.sta:
             args.model_name = args.model_name + '~' + 'cvae'
-            self.distance_threshold = 0.1  # ! 控制虚拟经验与真实经验的差距
+            self.distance_threshold = 0.05  # ! 控制虚拟经验与真实经验的差距
             if args.sta_kind:  # 读取预训练模型
                 print(f'==> 读取{args.sta_kind} cvae模型')
                 args.model_name = args.model_name + '~' + args.sta_kind
                 path = f'model/cvae/{mission}/{args.sta_kind}.pt'
-                self.cvae = torch.load(path, map_location=self.device)
+                self.sta = torch.load(path, map_location=self.device)
             else:
                 print(f'==> 在线训练 cvae模型')
-                self.cvae = CVAE(obs_dim, action_dim, obs_dim)  # 在线训练
+                self.sta = CVAE(obs_dim, action_dim, obs_dim)  # 在线训练
         else:
-            self.cvae = None
+            self.sta = None
             self.distance_threshold = None
         
         # PER
@@ -617,6 +653,7 @@ class DQNAgent:
     def select_action(self, state: np.ndarray) -> np.ndarray:
         """Select an action from the input state."""
         # NoisyNet: no epsilon greedy action selection
+        state = state.reshape(-1)
         selected_action = self.dqn(torch.FloatTensor(state).to(self.device)).argmax()
         selected_action = selected_action.detach().cpu().numpy()
         
@@ -627,10 +664,12 @@ class DQNAgent:
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, np.float64, bool]:
         """Take an action and return the response of the env."""
-        # * 反事实经验拓展
-        
+        # ! 反事实经验拓展 # TODO
+        if self.sta and len(self.memory) > self.batch_size and len(self.memory) <= args.buffer_size:
+            self.memory = counterfactual_exp_expand(self.memory, self.sta, 0, 5, 0.1)
         
         next_state, reward, terminated, truncated, _ = self.env.step(action)
+        next_state = next_state.reshape(-1)
         done = terminated or truncated
         
         if not self.is_test:
@@ -698,12 +737,14 @@ class DQNAgent:
         update_cnt = 0
         losses = []
         scores = []
+        time_list = []
+        seed_list = []
+        best_score = -1e10  # 初始化最佳分数
         score = 0
-        with tqdm(total=num_frames, mininterval=30, ncols=100) as pbar:
+        with tqdm(total=num_frames, mininterval=100, ncols=100) as pbar:
             for frame_idx in range(1, num_frames + 1):
                 action = self.select_action(state)
                 next_state, reward, done = self.step(action)
-
                 state = next_state
                 score += reward
                 
@@ -719,12 +760,15 @@ class DQNAgent:
                     scores.append(score)
                     score = 0
                     pbar.set_postfix({
-                        'Episode': num_frames // 400 + 1,
+                        # 'Step': num_frames // 400 + 1,
                         'scores': round(scores[-1], 2),
+                        'Pool size': len(self.memory)
                     })
+                    time_list.append(time.strftime('%m-%d %H:%M:%S', time.localtime()))
+                    seed_list.append(self.seed)
 
                 # if training is ready
-                if len(self.memory) >= self.batch_size:
+                if len(self.memory) >= self.batch_size * 2:
                     loss = self.update_model()
                     losses.append(loss)
                     update_cnt += 1
@@ -732,9 +776,17 @@ class DQNAgent:
                     # if hard update is needed
                     if update_cnt % self.target_update == 0:
                         self._target_hard_update()
+                
+                if score > best_score:
+                    best_weight = agent.dqn.state_dict()
+                    best_score = score
+                
+                # 其他记录信息
                 pbar.update(1)
-            
-        self._plot(frame_idx, scores, losses)    
+            # 保存数据
+            save_DQN_data(self.memory, scores, time_list,  seed_list, CKP_PATH, 
+                            0, frame_idx, 0, best_weight, seed)
+        self._plot(frame_idx, scores, losses)
         self.env.close()
         return scores, losses
         
@@ -817,7 +869,7 @@ class DQNAgent:
         losses: List[float],
     ):
         """Plot the training progresses."""
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(10, 5))
         plt.subplot(121)
         plt.title('frame %s. score: %s' % (frame_idx, np.mean(scores[-10:])))
         plt.plot(scores)
@@ -825,7 +877,7 @@ class DQNAgent:
         plt.title('loss')
         plt.plot(losses)
         # plt.show()
-        plt.savefig(f'image/exp/train_RainbowDQN_{seed}.pdf')
+        plt.savefig(f'image/tmp/{mission}/return_and_loss/{args.symbol}_{model_name}_{system_type}.pdf')
 
 seed = 42
 # environment
@@ -836,19 +888,16 @@ env.configure({
     "duration": 100,
 })
 def seed_torch(seed):
+    np.random.seed(seed)
+    random.seed(seed)
     torch.manual_seed(seed)
     if torch.backends.cudnn.enabled:
         torch.cuda.manual_seed(seed)
         torch.backends.cudnn.benchmark = False
         torch.backends.cudnn.deterministic = True
 
-np.random.seed(seed)
-random.seed(seed)
-seed_torch(seed)
-
 # parameters
-num_frames = 40000
-memory_size = 10000
+memory_size = args.buffer_size
 batch_size = 128
 target_update = 100
 
@@ -858,14 +907,26 @@ model_name = args.model_name.split('_')[1]
 # VAE
 
 # ---- 调试用，上线删除 ----
-if sys.platform != 'linux':
-    args.sta = True
-    args.sta_kind = 'regular'
+# if sys.platform != 'linux':
+#     args.sta = True
+#     args.sta_kind = 'regular'
 # ------------------------
 
+system_type = sys.platform  # 操作系统
 
 for seed in range(args.begin_seed, args.end_seed + 1):
+    begin_time = time.time()
+    seed_torch(seed)
+    CKP_PATH = f'ckpt/{"/".join(args.model_name.split('_'))}/{seed}/{system_type}.pt'
     # train
     agent = DQNAgent(env, memory_size, batch_size, target_update, seed, n_step=1)
-
-    scores, losses = agent.train(num_frames)
+    scores, losses = agent.train(args.step)
+    
+    train_time = (time.time() - begin_time) / 60
+    print('总时间: %.2f min'%train_time)
+    sns.lineplot(scores)
+    plt.title(f'{args.model_name}, training time: {train_time} min')
+    plt.xlabel('Episode')
+    plt.ylabel('Return')
+    plt.savefig(f'image/tmp/{mission}/{args.symbol}_{model_name}_{system_type}.pdf')
+plt.close()
