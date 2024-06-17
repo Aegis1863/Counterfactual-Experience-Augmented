@@ -26,10 +26,10 @@ parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
-parser.add_argument('-e', '--episodes', default=800, type=int, help='运行回合数')
+parser.add_argument('-e', '--episodes', default=1000, type=int, help='运行回合数')
 parser.add_argument('-b', '--buffer_size', default=25000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
-parser.add_argument('--end_seed', default=44, type=int, help='结束种子')
+parser.add_argument('--end_seed', default=46, type=int, help='结束种子')
 args = parser.parse_args()
 
 if args.writer == 2:
@@ -156,7 +156,7 @@ if __name__ == '__main__':
     update_interval = 50  # 若干回合更新一次目标网络
     minimal_size = 500  # 最小经验数
     batch_size = 128
-    total_control_point = 0.4
+    total_control_point = 0.2  # ! 完全控制点
     
     # 神经网络相关
     lr = 2e-3
@@ -174,7 +174,7 @@ if __name__ == '__main__':
     
     if args.sta:
         args.model_name = args.model_name + '~' + 'cvae'
-        distance_threshold = 0.05  # ! 控制虚拟经验与真实经验的差距
+        distance_threshold = 0.15  # ! 控制虚拟经验与真实经验的差距
         if args.sta_kind:  # 读取预训练模型
             print(f'==> 读取{args.sta_kind} cvae模型')
             args.model_name = args.model_name + '~' + args.sta_kind
