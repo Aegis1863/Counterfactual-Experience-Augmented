@@ -32,13 +32,13 @@ parser.add_argument('--symbol', default='Normal', type=str, help='特殊唯一�
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
-parser.add_argument('-e', '--step', default=15000, type=int, help='运行回合数')
+parser.add_argument('-e', '--step', default=20000, type=int, help='运行回合数')
 parser.add_argument('-b', '--buffer_size', default=20000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=46, type=int, help='结束种子')
 args = parser.parse_args()
 
-def save_DQN_data(replay_buffer, return_list, time_list, 
+def save_DQN_data(replay_buffer, return_list, time_list, pool_list,
                   seed_list, ckpt_path, epoch, episode, epsilon,
                   best_weight, seed):
     path = "/".join(ckpt_path.split('/')[:-1])
@@ -57,7 +57,7 @@ def save_DQN_data(replay_buffer, return_list, time_list,
     }, ckpt_path)
 
     # 绘图数据存档
-    save_plot_data(return_list, time_list, seed_list, ckpt_path, seed, len(replay_buffer))
+    save_plot_data(return_list, time_list, seed_list, ckpt_path, seed, pool_list)
 
 def save_plot_data(return_list, time_list, seed_list, ckpt_path, seed, pool_size=None):
     system_type = sys.platform  # 操作系统标识
@@ -599,7 +599,6 @@ class DQNAgent:
         
         # * CVAE
         if args.sta:
-            args.model_name = args.model_name + '~' + 'cvae'
             self.distance_threshold = 0.05  # ! 控制虚拟经验与真实经验的差距
             if args.sta_kind:  # 读取预训练模型
                 print(f'==> 读取{args.sta_kind} cvae模型')
@@ -743,6 +742,7 @@ class DQNAgent:
         scores = []
         time_list = []
         seed_list = []
+        pool_list = []  # 经验池大小
         best_score = -1e10  # 初始化最佳分数
         score = 0
         with tqdm(total=num_frames, mininterval=100, ncols=100) as pbar:
@@ -770,7 +770,7 @@ class DQNAgent:
                     })
                     time_list.append(time.strftime('%m-%d %H:%M:%S', time.localtime()))
                     seed_list.append(self.seed)
-
+                    pool_list.append(len(self.memory))
                 # if training is ready
                 if len(self.memory) >= self.batch_size * 2:
                     loss = self.update_model()
@@ -788,7 +788,7 @@ class DQNAgent:
                 # 其他记录信息
                 pbar.update(1)
             # 保存数据
-            save_DQN_data(self.memory, scores, time_list,  seed_list, CKP_PATH, 
+            save_DQN_data(self.memory, scores, time_list, pool_list, seed_list, CKP_PATH, 
                             0, frame_idx, 0, best_weight, seed)
         self._plot(frame_idx, scores, losses)
         self.env.close()
@@ -919,11 +919,10 @@ if sys.platform != 'linux':
     args.sta = True
     args.sta_kind = 'regular'
 # ------------------------
-
+args.model_name = args.model_name + '~' + 'cvae' if args.sta else args.model_name
 system_type = sys.platform  # 操作系统
-
+begin_time = time.time()
 for seed in range(args.begin_seed, args.end_seed + 1):
-    begin_time = time.time()
     seed_torch(seed)
     CKP_PATH = f'ckpt/{"/".join(args.model_name.split("_"))}_{args.symbol}/{seed}/{system_type}.pt'
     # train
@@ -931,4 +930,4 @@ for seed in range(args.begin_seed, args.end_seed + 1):
     scores, losses = agent.train(args.step)
     
     train_time = (time.time() - begin_time) / 60
-    print('总时间: %.2f min'%train_time)
+    print('当前花费总时间: %.2f min'%train_time)
