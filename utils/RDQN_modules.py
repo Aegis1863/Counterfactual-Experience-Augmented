@@ -1,6 +1,3 @@
-'''
-https://github.com/Curt-Park/rainbow-is-all-you-need/blob/master/08.rainbow.ipynb
-'''
 
 import math
 import os
@@ -25,18 +22,6 @@ from tqdm import tqdm
 import argparse
 import warnings
 warnings.filterwarnings('ignore')
-
-parser = argparse.ArgumentParser(description='DQN 任务')
-parser.add_argument('--model_name', default="highway_RDQN", type=str, help='模型名称, 任务_模型')
-parser.add_argument('--symbol', default='Normal', type=str, help='特殊唯一标识')
-parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
-parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
-parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
-parser.add_argument('-e', '--step', default=20000, type=int, help='运行回合数')
-parser.add_argument('-b', '--buffer_size', default=20000, type=int, help='经验池大小')
-parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
-parser.add_argument('--end_seed', default=42, type=int, help='结束种子')
-args = parser.parse_args()
 
 def save_DQN_data(replay_buffer, return_list, time_list, pool_list,
                   seed_list, ckpt_path, epoch, episode, epsilon,
@@ -132,7 +117,7 @@ def counterfactual_exp_expand(replay_buffer, sta, beta, action_space_size, dista
     b_d_prime = np.zeros_like(valid_fake_r)
     # 更新经验池
     for s, a, r, ns, d in zip(valid_fake_s, valid_fake_a, valid_fake_r, valid_fake_ns, b_d_prime):
-        replay_buffer.store(s, a, r, ns, d, 1)
+        replay_buffer.store(s, a, r, ns, d)
     return replay_buffer
 
 
@@ -152,7 +137,6 @@ class ReplayBuffer:
         self.acts_buf = np.zeros([size], dtype=np.float32)
         self.rews_buf = np.zeros([size], dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
-        self.exp_type_buf = np.zeros(size, dtype=np.float32)  # 虚拟经验是1
         self.max_size, self.batch_size = size, batch_size
         self.ptr, self.size, = 0, 0
         
@@ -168,9 +152,8 @@ class ReplayBuffer:
         rew: float, 
         next_obs: np.ndarray, 
         done: bool,
-        exp_type: bool,
     ) -> Tuple[np.ndarray, np.ndarray, float, np.ndarray, bool]:
-        transition = (obs, act, rew, next_obs, done, exp_type)
+        transition = (obs, act, rew, next_obs, done)
         self.n_step_buffer.append(transition)
 
         # single step transition is not ready
@@ -188,7 +171,6 @@ class ReplayBuffer:
         self.acts_buf[self.ptr] = act
         self.rews_buf[self.ptr] = rew
         self.done_buf[self.ptr] = done
-        self.exp_type_buf[self.ptr] = exp_type
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
         
@@ -203,7 +185,6 @@ class ReplayBuffer:
             acts=self.acts_buf[idxs],
             rews=self.rews_buf[idxs],
             done=self.done_buf[idxs],
-            exp_type = self.exp_type_buf[idxs],
             # for N-step Learning
             indices=idxs,
         )
@@ -218,7 +199,6 @@ class ReplayBuffer:
             acts=self.acts_buf[idxs],
             rews=self.rews_buf[idxs],
             done=self.done_buf[idxs],
-            exp_type=self.exp_type_buf[idxs],
         )
     
     def _get_n_step_info(
@@ -226,10 +206,10 @@ class ReplayBuffer:
     ) -> Tuple[np.int64, np.ndarray, bool]:
         """Return n step rew, next_obs, and done."""
         # info of the last transition
-        rew, next_obs, done = n_step_buffer[-1][-4:-1]
+        rew, next_obs, done = n_step_buffer[-1][-3:]
 
         for transition in reversed(list(n_step_buffer)[:-1]):
-            r, n_o, d = transition[-4:-1]
+            r, n_o, d = transition[-3:]
 
             rew = r + gamma * rew * (1 - d)
             next_obs, done = (n_o, d) if d else (next_obs, done)
@@ -368,10 +348,9 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         rew: float, 
         next_obs: np.ndarray, 
         done: bool,
-        exp_type: bool,
     ) -> Tuple[np.ndarray, np.ndarray, float, np.ndarray, bool]:
         """Store experience and priority."""
-        transition = super().store(obs, act, rew, next_obs, done, exp_type)
+        transition = super().store(obs, act, rew, next_obs, done)
         
         if transition:
             self.sum_tree[self.tree_ptr] = self.max_priority ** self.alpha
@@ -392,7 +371,6 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         acts = self.acts_buf[indices]
         rews = self.rews_buf[indices]
         done = self.done_buf[indices]
-        exp_type = self.exp_type_buf[indices]
         weights = np.array([self._calculate_weight(i, beta) for i in indices])
         
         return dict(
@@ -401,7 +379,6 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             acts=acts,
             rews=rews,
             done=done,
-            exp_type=exp_type,
             weights=weights,
             indices=indices,
         )
@@ -417,7 +394,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         acts = self.acts_buf[all_indices]
         rews = self.rews_buf[all_indices]
         done = self.done_buf[all_indices]
-        exp_type = self.exp_type_buf[all_indices]
+
         weights = np.ones_like(rews)
         
         return dict(
@@ -426,7 +403,6 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             acts=acts,
             rews=rews,
             done=done,
-            exp_type=exp_type,
             weights=weights,
             indices=all_indices,
         )
@@ -606,20 +582,6 @@ class DQNAgent:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(self.device)
         
-        # * CVAE
-        if args.sta:
-            self.distance_threshold = 0.05  # ! 控制虚拟经验与真实经验的差距
-            if args.sta_kind:  # 读取预训练模型
-                print(f'==> 读取{args.sta_kind} cvae模型')
-                path = f'model/cvae/{mission}/{args.sta_kind}.pt'
-                self.sta = torch.load(path, map_location=self.device)
-            else:
-                print(f'==> 在线训练 cvae模型')
-                self.sta = CVAE(obs_dim, action_dim, obs_dim)  # 在线训练
-        else:
-            self.sta = None
-            self.distance_threshold = None
-        self.total_step = 0
         
         # PER
         # memory for 1-step Learning
@@ -672,19 +634,13 @@ class DQNAgent:
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, np.float64, bool]:
         """Take an action and return the response of the env."""
-        # ! 反事实经验拓展 # TODO
-        if self.sta and (len(self.memory) > self.batch_size) and \
-                (len(self.memory) <= (args.buffer_size / 2)) and \
-                (self.total_step % self.batch_size == 0):
-            self.memory = counterfactual_exp_expand(self.memory, self.sta, 0, 5, 0.1)
         
         next_state, reward, terminated, truncated, _ = self.env.step(action)
-        self.total_step += 1
         next_state = next_state.reshape(-1)
         done = terminated or truncated
         
         if not self.is_test:
-            self.transition += [reward, next_state, done, 0]
+            self.transition += [reward, next_state, done]
             
             # N-step transition
             if self.use_n_step:
@@ -788,17 +744,11 @@ class DQNAgent:
                     # if hard update is needed
                     if update_cnt % self.target_update == 0:
                         self._target_hard_update()
-                
-                if score > best_score:
-                    best_weight = agent.dqn.state_dict()
-                    best_score = score
+            
                 
                 # 其他记录信息
                 pbar.update(1)
-            # 保存数据
-            save_DQN_data(self.memory, scores, time_list, pool_list, seed_list, CKP_PATH, 
-                            0, frame_idx, 0, best_weight, seed)
-        self._plot(frame_idx, scores, losses)
+        # self._plot(frame_idx, scores, losses)
         self.env.close()
         return scores, losses
         
@@ -874,69 +824,3 @@ class DQNAgent:
         """Hard update: target <- local."""
         self.dqn_target.load_state_dict(self.dqn.state_dict())
                 
-    def _plot(
-        self, 
-        frame_idx: int, 
-        scores: List[float], 
-        losses: List[float],
-    ):
-        """Plot the training progresses."""
-        plt.figure(figsize=(10, 5))
-        plt.subplot(121)
-        plt.xlabel('Step')
-        plt.ylabel('Return')
-        plt.title('frame %s. score: %s' % (frame_idx, np.mean(scores[-10:])))
-        plt.plot(scores)
-        plt.subplot(122)
-        plt.title('loss')
-        plt.plot(losses)
-        # plt.show()
-        file_path = f'image/tmp/{mission}/{args.symbol}'
-        os.makedirs(file_path) if not os.path.exists(file_path) else None
-        plt.savefig(f'{file_path}/{self.seed}_{model_name}_{system_type}.pdf')
-
-if __name__ == '__main__':
-    seed = 42
-    # environment
-    env = gym.make('highway-fast-v0')
-    env.configure({
-        "lanes_count": 4,
-        "vehicles_density": 2,
-        "duration": 100,
-    })
-    def seed_torch(seed):
-        np.random.seed(seed)
-        random.seed(seed)
-        torch.manual_seed(seed)
-        if torch.backends.cudnn.enabled:
-            torch.cuda.manual_seed(seed)
-            torch.backends.cudnn.benchmark = False
-            torch.backends.cudnn.deterministic = True
-
-    # parameters
-    memory_size = args.buffer_size
-    batch_size = 128
-    target_update = 100
-
-    mission = args.model_name.split('_')[0]
-    model_name = args.model_name.split('_')[1]
-
-    # VAE
-
-    # ---- 调试用，上线删除 ----
-    if sys.platform != 'linux':
-        args.sta = True
-        args.sta_kind = 'regular'
-    # ------------------------
-    args.model_name = args.model_name + '~' + 'cvae' if args.sta else args.model_name
-    system_type = sys.platform  # 操作系统
-    begin_time = time.time()
-    for seed in range(args.begin_seed, args.end_seed + 1):
-        seed_torch(seed)
-        CKP_PATH = f'ckpt/{"/".join(args.model_name.split("_"))}_{args.symbol}/{seed}/{system_type}.pt'
-        # train
-        agent = DQNAgent(env, memory_size, batch_size, target_update, seed, n_step=1)
-        scores, losses = agent.train(args.step)
-        
-        train_time = (time.time() - begin_time) / 60
-        print('当前花费总时间: %.2f min'%train_time)
