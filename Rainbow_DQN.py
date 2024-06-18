@@ -77,7 +77,7 @@ def save_plot_data(return_list, time_list, seed_list, ckpt_path, seed, pool_size
     return_save["Log time"] = time_list
     return_save.to_csv(log_path, index=False, encoding='utf-8-sig')
 
-def counterfactual_exp_expand(replay_buffer, sta, beta, action_space_size, distance_threshold):
+def counterfactual_exp_expand(replay_buffer, sta, batch_size, action_space_size, distance_threshold):
     '''
     replay_buffer: 经验池
     sta: cvae
@@ -86,7 +86,7 @@ def counterfactual_exp_expand(replay_buffer, sta, beta, action_space_size, dista
     distance_threshold: 经验差距阈值，差距太大的匹配经验被放弃
     '''
     # 抽样 batch_size 组真实经验
-    samples = replay_buffer.sample_batch(beta)
+    samples = replay_buffer.sample_new_real_exp(batch_size)
     b_s, b_ns, b_a, b_r, b_d = samples['obs'], samples['next_obs'], samples['acts'], samples['rews'], samples['done']
     b_s, b_ns, b_a, b_r, b_d = [torch.tensor(i) for i in [b_s, b_ns, b_a, b_r, b_d]]
     
@@ -107,7 +107,7 @@ def counterfactual_exp_expand(replay_buffer, sta, beta, action_space_size, dista
     b_ns_prime = expand_b_s + diff_state
 
     # ? 读取所有真实经验
-    all_samples = replay_buffer.retrieve_all_experiences()
+    all_samples = replay_buffer.retrieve_real_experiences()
     all_ns, all_r = torch.tensor(all_samples['next_obs']), torch.tensor(all_samples['rews'])
     
     # 将真实经验和虚拟经验拼接成向量
@@ -132,7 +132,7 @@ def counterfactual_exp_expand(replay_buffer, sta, beta, action_space_size, dista
     b_d_prime = np.zeros_like(valid_fake_r)
     # 更新经验池
     for s, a, r, ns, d in zip(valid_fake_s, valid_fake_a, valid_fake_r, valid_fake_ns, b_d_prime):
-        replay_buffer.store(s, a, r, ns, d, 1)
+        replay_buffer.store(s, a, r, ns, d, 1, 0)  # 最后两个数字含义：虚拟经验，未被反事实抽样
     return replay_buffer
 
 
@@ -152,7 +152,8 @@ class ReplayBuffer:
         self.acts_buf = np.zeros([size], dtype=np.float32)
         self.rews_buf = np.zeros([size], dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
-        self.exp_type_buf = np.zeros(size, dtype=np.float32)  # 虚拟经验是1
+        self.exp_type_buf = np.zeros(size, dtype=np.float32)  # 虚拟经验是 1，真实经验是 0
+        self.cf_sped_buf = np.zeros(size, dtype=np.float32)  # 没被抽的是 0
         self.max_size, self.batch_size = size, batch_size
         self.ptr, self.size, = 0, 0
         
@@ -169,8 +170,9 @@ class ReplayBuffer:
         next_obs: np.ndarray, 
         done: bool,
         exp_type: bool,
+        cf_sped: bool
     ) -> Tuple[np.ndarray, np.ndarray, float, np.ndarray, bool]:
-        transition = (obs, act, rew, next_obs, done, exp_type)
+        transition = (obs, act, rew, next_obs, done, exp_type, cf_sped)
         self.n_step_buffer.append(transition)
 
         # single step transition is not ready
@@ -189,6 +191,8 @@ class ReplayBuffer:
         self.rews_buf[self.ptr] = rew
         self.done_buf[self.ptr] = done
         self.exp_type_buf[self.ptr] = exp_type
+        self.cf_sped[self.ptr] = cf_sped
+        
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
         
@@ -204,6 +208,7 @@ class ReplayBuffer:
             rews=self.rews_buf[idxs],
             done=self.done_buf[idxs],
             exp_type = self.exp_type_buf[idxs],
+            cf_sped = self.cf_sped_buf[idxs],
             # for N-step Learning
             indices=idxs,
         )
@@ -219,6 +224,7 @@ class ReplayBuffer:
             rews=self.rews_buf[idxs],
             done=self.done_buf[idxs],
             exp_type=self.exp_type_buf[idxs],
+            cf_sped=self.cf_sped_buf[idxs],
         )
     
     def _get_n_step_info(
@@ -226,10 +232,10 @@ class ReplayBuffer:
     ) -> Tuple[np.int64, np.ndarray, bool]:
         """Return n step rew, next_obs, and done."""
         # info of the last transition
-        rew, next_obs, done = n_step_buffer[-1][-4:-1]
+        rew, next_obs, done = n_step_buffer[-1][-5:-2]
 
         for transition in reversed(list(n_step_buffer)[:-1]):
-            r, n_o, d = transition[-4:-1]
+            r, n_o, d = transition[-5:-2]
 
             rew = r + gamma * rew * (1 - d)
             next_obs, done = (n_o, d) if d else (next_obs, done)
@@ -369,9 +375,10 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         next_obs: np.ndarray, 
         done: bool,
         exp_type: bool,
+        cf_sped: bool,
     ) -> Tuple[np.ndarray, np.ndarray, float, np.ndarray, bool]:
         """Store experience and priority."""
-        transition = super().store(obs, act, rew, next_obs, done, exp_type)
+        transition = super().store(obs, act, rew, next_obs, done, exp_type, cf_sped)
         
         if transition:
             self.sum_tree[self.tree_ptr] = self.max_priority ** self.alpha
@@ -393,6 +400,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         rews = self.rews_buf[indices]
         done = self.done_buf[indices]
         exp_type = self.exp_type_buf[indices]
+        cf_sped = self.cf_sped_buf[indices]
         weights = np.array([self._calculate_weight(i, beta) for i in indices])
         
         return dict(
@@ -402,23 +410,22 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             rews=rews,
             done=done,
             exp_type=exp_type,
+            cf_sped=cf_sped,
             weights=weights,
             indices=indices,
         )
     
-    def retrieve_all_experiences(self) -> Dict[str, np.ndarray]:
-        """Retrieve all experiences stored in the buffer."""
+    def retrieve_real_experiences(self) -> Dict[str, np.ndarray]:
+        """采样真实经验，即exp_type值为0的"""
         assert len(self) > 0
 
-        all_indices = np.arange(len(self))
+        indices = np.where(self.exp_type_buf==0)
         
-        obs = self.obs_buf[all_indices]
-        next_obs = self.next_obs_buf[all_indices]
-        acts = self.acts_buf[all_indices]
-        rews = self.rews_buf[all_indices]
-        done = self.done_buf[all_indices]
-        exp_type = self.exp_type_buf[all_indices]
-        weights = np.ones_like(rews)
+        obs = self.obs_buf[indices]
+        next_obs = self.next_obs_buf[indices]
+        acts = self.acts_buf[indices]
+        rews = self.rews_buf[indices]
+        done = self.done_buf[indices]
         
         return dict(
             obs=obs,
@@ -426,9 +433,23 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             acts=acts,
             rews=rews,
             done=done,
-            exp_type=exp_type,
-            weights=weights,
-            indices=all_indices,
+        )
+    
+    def sample_new_real_exp(self, batch_size):
+        '''采样未经反事实推断的真实经验，即即exp_type和sped_buf值同时为0的'''
+        assert len(self) > 0
+        indices = np.where((self.exp_type_buf==0) and (self.cf_sped_buf==0))
+        obs = self.obs_buf[indices]
+        next_obs = self.next_obs_buf[indices]
+        acts = self.acts_buf[indices]
+        rews = self.rews_buf[indices]
+        done = self.done_buf[indices]
+        return dict(
+            obs=obs,
+            next_obs=next_obs,
+            acts=acts,
+            rews=rews,
+            done=done,
         )
     
     def update_priorities(self, indices: List[int], priorities: np.ndarray):
@@ -676,7 +697,7 @@ class DQNAgent:
         if self.sta and (len(self.memory) > self.batch_size) and \
                 (len(self.memory) <= (args.buffer_size / 2)) and \
                 (self.total_step % self.batch_size == 0):
-            self.memory = counterfactual_exp_expand(self.memory, self.sta, 0, 5, 0.1)
+            self.memory = counterfactual_exp_expand(self.memory, self.sta, self.batch_size, 5, 0.1)
         
         next_state, reward, terminated, truncated, _ = self.env.step(action)
         self.total_step += 1
@@ -684,7 +705,7 @@ class DQNAgent:
         done = terminated or truncated
         
         if not self.is_test:
-            self.transition += [reward, next_state, done, 0]
+            self.transition += [reward, next_state, done, 0, 0]
             
             # N-step transition
             if self.use_n_step:
