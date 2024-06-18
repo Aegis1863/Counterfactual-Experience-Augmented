@@ -106,7 +106,7 @@ def counterfactual_exp_expand(replay_buffer, sta, batch_size, action_space_size,
     expand_b_s = b_s.repeat_interleave(action_space_size - 1, dim=0)
     b_ns_prime = expand_b_s + diff_state
 
-    # ? 读取所有真实经验
+    # 读取所有真实经验
     all_samples = replay_buffer.retrieve_real_experiences()
     all_ns, all_r = torch.tensor(all_samples['next_obs']), torch.tensor(all_samples['rews'])
     
@@ -153,7 +153,7 @@ class ReplayBuffer:
         self.rews_buf = np.zeros([size], dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
         self.exp_type_buf = np.zeros(size, dtype=np.float32)  # 虚拟经验是 1，真实经验是 0
-        self.cf_sped_buf = np.zeros(size, dtype=np.float32)  # 没被抽的是 0
+        self.cf_sped_buf = np.zeros(size, dtype=np.float32)  # 没被抽的是 0 , cf_sped: counterfactual_sampled
         self.max_size, self.batch_size = size, batch_size
         self.ptr, self.size, = 0, 0
         
@@ -191,7 +191,7 @@ class ReplayBuffer:
         self.rews_buf[self.ptr] = rew
         self.done_buf[self.ptr] = done
         self.exp_type_buf[self.ptr] = exp_type
-        self.cf_sped[self.ptr] = cf_sped
+        self.cf_sped_buf[self.ptr] = cf_sped
         
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
@@ -419,7 +419,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         """采样真实经验，即exp_type值为0的"""
         assert len(self) > 0
 
-        indices = np.where(self.exp_type_buf==0)
+        indices = np.where(self.exp_type_buf==0)[0][:self.size-1]
         
         obs = self.obs_buf[indices]
         next_obs = self.next_obs_buf[indices]
@@ -436,14 +436,15 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         )
     
     def sample_new_real_exp(self, batch_size):
-        '''采样未经反事实推断的真实经验，即即exp_type和sped_buf值同时为0的'''
+        '''采样未经反事实推断的真实经验，即exp_type和sped_buf值同时为0的'''
         assert len(self) > 0
-        indices = np.where((self.exp_type_buf==0) and (self.cf_sped_buf==0))
+        indices = np.where((self.exp_type_buf==0) & (self.cf_sped_buf==0))[0][:self.size-1]
         obs = self.obs_buf[indices]
         next_obs = self.next_obs_buf[indices]
         acts = self.acts_buf[indices]
         rews = self.rews_buf[indices]
         done = self.done_buf[indices]
+        self.cf_sped_buf[indices] = 1  # 标记为已经采样过
         return dict(
             obs=obs,
             next_obs=next_obs,
