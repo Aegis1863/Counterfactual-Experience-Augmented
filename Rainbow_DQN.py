@@ -156,6 +156,7 @@ class ReplayBuffer:
         self.cf_sped_buf = np.zeros(size, dtype=np.float32)  # 没被抽的是 0 , cf_sped: counterfactual_sampled
         self.max_size, self.batch_size = size, batch_size
         self.ptr, self.size, = 0, 0
+        self.capacity = size
         
         # for N-step Learning
         self.n_step_buffer = deque(maxlen=n_step)
@@ -697,7 +698,7 @@ class DQNAgent:
         # ! 反事实经验拓展 # TODO
         if self.sta and (len(self.memory) > self.batch_size) and \
                 (self.total_step % (2 * self.batch_size) == 0):
-            self.distance_threshold = max(0.1 * (self.memory.size - self.memory_size)**2 / self.memory_size**2, 0.01)
+            self.distance_threshold = max(0.1 * (self.memory.size - self.memory.capacity)**2 / self.memory_size**2, 0.01)
             self.memory = counterfactual_exp_expand(self.memory, self.sta, self.batch_size, 5, 0.1)
         
         next_state, reward, terminated, truncated, _ = self.env.step(action)
