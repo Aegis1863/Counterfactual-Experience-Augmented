@@ -18,7 +18,7 @@ colors = ['#e5071a', '#00CD00', '#1e90ff', '#FF9900', '#fd79a8', '#8074b2', '#63
 
 # -------------------
 # algs = ['PPO', 'PPO_B_0', 'PPO_B_500', 'PPO_B_1k']  # * 给出算法文件夹名
-algs = ['RDQN_Normal']  # * 给出算法文件夹名
+algs = ['RDQN_Normal', 'RDQN~cvae_STA~regular']  # * 给出算法文件夹名
 mission = 'highway'
 target_index = 'Return'
 # -------------------

@@ -630,7 +630,7 @@ class DQNAgent:
         
         # * CVAE
         if args.sta:
-            self.distance_threshold = 0.05  # ! 控制虚拟经验与真实经验的差距
+            self.distance_threshold = 0.1  # ! 控制虚拟经验与真实经验的初始差距
             if args.sta_kind:  # 读取预训练模型
                 print(f'==> 读取{args.sta_kind} cvae模型')
                 path = f'model/cvae/{mission}/{args.sta_kind}.pt'
@@ -696,8 +696,8 @@ class DQNAgent:
         """Take an action and return the response of the env."""
         # ! 反事实经验拓展 # TODO
         if self.sta and (len(self.memory) > self.batch_size) and \
-                (len(self.memory) <= (args.buffer_size / 2)) and \
-                (self.total_step % self.batch_size == 0):
+                (self.total_step % (2 * self.batch_size) == 0):
+            self.distance_threshold = max(0.1 * (self.memory.size - self.memory_size)**2 / self.memory_size**2, 0.01)
             self.memory = counterfactual_exp_expand(self.memory, self.sta, self.batch_size, 5, 0.1)
         
         next_state, reward, terminated, truncated, _ = self.env.step(action)
