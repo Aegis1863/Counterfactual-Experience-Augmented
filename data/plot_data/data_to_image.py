@@ -5,7 +5,7 @@ import numpy as np
 import os
 
 def smooth(data: pd.Series):
-    smooth_data = pd.Series(data).ewm(alpha=0.2).mean()
+    smooth_data = pd.Series(data).ewm(alpha=0.05).mean()
     return smooth_data
 
 def cumulative_mean(data):
@@ -18,8 +18,8 @@ colors = ['#e5071a', '#00CD00', '#1e90ff', '#FF9900', '#fd79a8', '#8074b2', '#63
 
 # -------------------
 # algs = ['PPO', 'PPO_B_0', 'PPO_B_500', 'PPO_B_1k']  # * 给出算法文件夹名
-algs = ['RDQN_Normal', 'RDQN~cvae_regular', 'RDQN~cvae_expert', 'PPO']  # * 给出算法文件夹名
-mission = 'sumo'
+algs = ['RDQN_Normal', 'RDQN~cvae_regular']  # * 给出算法文件夹名
+mission = 'highway'
 target_index = 'Return'
 # -------------------
 
@@ -40,7 +40,7 @@ for index, alg in enumerate(algs):
     ax = sns.set_theme(style='ticks', font_scale=1.3)
     plt.rcParams['font.family'] = 'Times New Roman'
     plt.grid(ls=':', color='grey', lw=1)
-    plt.xlabel('Episode($×10^3$s)')
+    plt.xlabel('Episode')
     plt.ylabel(f'{target_index}')
     # plt.ylim((10, 100))
     # plt.xlim((0, 200))
