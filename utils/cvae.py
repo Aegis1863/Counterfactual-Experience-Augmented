@@ -72,6 +72,7 @@ class CVAE(nn.Module):
         with torch.no_grad():
             sample = torch.randn(conditions.shape[0], self.latent_dim).to(device)
             generated = self.decode(sample, one_hot_conditions).cpu()
+            
         quality = silhouette_score(generated, conditions)  # 轮廓系数
         self.quality = quality
         if save_path and self.quality < 0.8:
