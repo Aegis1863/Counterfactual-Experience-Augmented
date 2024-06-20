@@ -5,7 +5,7 @@ import numpy as np
 import os
 
 def smooth(data: pd.Series):
-    smooth_data = pd.Series(data).ewm(alpha=0.1).mean()
+    smooth_data = pd.Series(data).ewm(alpha=0.2).mean()
     return smooth_data
 
 def cumulative_mean(data):
@@ -18,9 +18,9 @@ colors = ['#e5071a', '#00CD00', '#1e90ff', '#FF9900', '#fd79a8', '#8074b2', '#63
 
 # -------------------
 # algs = ['PPO', 'PPO_B_0', 'PPO_B_500', 'PPO_B_1k']  # * 给出算法文件夹名
-algs = ['RDQN_Normal', 'RDQN~cvae_regular']  # * 给出算法文件夹名
+algs = ['RDQN_Normal', 'RDQN~cvae_regular', 'RDQN~cvae_expert', 'PPO']  # * 给出算法文件夹名
 mission = 'sumo'
-target_index = 'Pool size'
+target_index = 'Return'
 # -------------------
 
 plt.figure(figsize=(8, 5))

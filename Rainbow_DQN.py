@@ -28,15 +28,15 @@ import warnings
 warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='DQN 任务')
-parser.add_argument('--model_name', default="CarRacing_RDQN", type=str, help='模型名称, 任务_模型')
+parser.add_argument('--model_name', default="highway_RDQN", type=str, help='模型名称, 任务_模型')
 parser.add_argument('--symbol', default='Normal', type=str, help='特殊唯一标识')
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
-parser.add_argument('-e', '--step', default=20000, type=int, help='运行回合数')
-parser.add_argument('-b', '--buffer_size', default=10000, type=int, help='经验池大小')
+parser.add_argument('-e', '--step', default=15000, type=int, help='运行回合数')
+parser.add_argument('-b', '--buffer_size', default=20000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
-parser.add_argument('--end_seed', default=44, type=int, help='结束种子')
+parser.add_argument('--end_seed', default=45, type=int, help='结束种子')
 args = parser.parse_args()
 
 def save_DQN_data(replay_buffer, return_list, time_list, pool_list,
@@ -78,7 +78,7 @@ def save_plot_data(return_list, time_list, seed_list, ckpt_path, seed, pool_size
     return_save["Log time"] = time_list
     return_save.to_csv(log_path, index=False, encoding='utf-8-sig')
 
-def counterfactual_exp_expand(replay_buffer, sta, batch_size, action_space_size, distance_threshold):
+def counterfactual_exp_expand(replay_buffer, sta, batch_size, action_space_size, distance_ratio):
     '''
     replay_buffer: 经验池
     sta: cvae
@@ -120,9 +120,12 @@ def counterfactual_exp_expand(replay_buffer, sta, batch_size, action_space_size,
     distances = torch.cdist(b_ns_prime, all_ns)
     min_indices = torch.argmin(distances, dim=1)
     min_distances = distances[torch.arange(distances.size(0)), min_indices]
+    k = int(len(min_distances) * distance_ratio)
+
 
     # 筛选出距离小于阈值的虚拟经验
-    close_matches = min_distances < distance_threshold
+    _, sorted_indices = torch.sort(min_distances)
+    close_matches = sorted_indices[:k]
     valid_min_indices = min_indices[close_matches]
     
     valid_fake_s = expand_b_s[close_matches].numpy()
@@ -592,6 +595,8 @@ class DQNAgent:
         alpha: float = 0.2,
         beta: float = 0.6,
         prior_eps: float = 1e-6,
+        # * CVAE
+        distance_threshold: float = 0.2,
         # Categorical DQN parameters
         v_min: float = 0.0,
         v_max: float = 200.0,
@@ -616,9 +621,8 @@ class DQNAgent:
             atom_size (int): the unit number of support
             n_step (int): step number to calculate n-step td error
         """
-        # obs_dim = torch.multiply(*env.observation_space.shape)
-        obs_dim = env.observation_space.shape[0]
-        action_dim = env.action_space.n
+        obs_dim = torch.multiply(*env.observation_space.shape)
+        self.action_dim = env.action_space.n
         
         self.env = env
         self.batch_size = batch_size
@@ -633,14 +637,14 @@ class DQNAgent:
         
         # * CVAE
         if args.sta:
-            self.distance_threshold = 0.1  # ! 控制虚拟经验与真实经验的初始差距
+            self.distance_threshold = distance_threshold  # ! 控制虚拟经验与真实经验的初始差距
             if args.sta_kind:  # 读取预训练模型
                 print(f'==> 读取{args.sta_kind} cvae模型')
                 path = f'model/cvae/{mission}/{args.sta_kind}.pt'
                 self.sta = torch.load(path, map_location=self.device)
             else:
                 print(f'==> 在线训练 cvae模型')
-                self.sta = CVAE(obs_dim, action_dim, obs_dim)  # 在线训练
+                self.sta = CVAE(obs_dim, self.action_dim, obs_dim)  # 在线训练
         else:
             self.sta = None
             self.distance_threshold = None
@@ -669,8 +673,8 @@ class DQNAgent:
         self.support = torch.linspace(self.v_min, self.v_max, self.atom_size).to(self.device)
 
         # networks: dqn, dqn_target
-        self.dqn = Network(obs_dim, action_dim, self.atom_size, self.support).to(self.device)
-        self.dqn_target = Network(obs_dim, action_dim, self.atom_size, self.support).to(self.device)
+        self.dqn = Network(obs_dim, self.action_dim, self.atom_size, self.support).to(self.device)
+        self.dqn_target = Network(obs_dim, self.action_dim, self.atom_size, self.support).to(self.device)
         self.dqn_target.load_state_dict(self.dqn.state_dict())
         self.dqn_target.eval()
         
@@ -682,7 +686,6 @@ class DQNAgent:
         
         # mode: train / test
         self.is_test = False
-
     def select_action(self, state: np.ndarray) -> np.ndarray:
         """Select an action from the input state."""
         # NoisyNet: no epsilon greedy action selection
@@ -698,10 +701,9 @@ class DQNAgent:
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, np.float64, bool]:
         """Take an action and return the response of the env."""
         # ! 反事实经验拓展 # TODO
-        if self.sta and (len(self.memory) > self.batch_size) and \
-                (self.total_step % (2 * self.batch_size) == 0):
-            self.memory = counterfactual_exp_expand(self.memory, self.sta, self.batch_size, 5, self.distance_threshold)
-            self.distance_threshold = max(0.1 * (self.memory.size - self.memory.capacity)**2 / self.memory.capacity**2, 0.01)
+        if self.sta and self.total_step % (2 * self.batch_size) == 0 and self.total_step > 1 and self.memory.size < self.memory.capacity:
+            self.memory = counterfactual_exp_expand(self.memory, self.sta, self.batch_size, self.action_dim, self.distance_threshold)
+            # self.distance_threshold = max(self.distance_threshold * (self.memory.size - self.memory.capacity)**2 / self.memory.capacity**2, 0.05)
         
         next_state, reward, terminated, truncated, _ = self.env.step(action)
         self.total_step += 1
@@ -949,20 +951,24 @@ if __name__ == '__main__':
     model_name = args.model_name.split('_')[1]
 
     # VAE
-
-    # ---- 调试用，上线删除 ----
-    # if sys.platform != 'linux':
-    #    args.sta = True
-    #    args.sta_kind = 'regular'
+    # --------- 调试用 --------
+    if sys.platform != 'linux':
+        args.sta = True
+        args.sta_kind = 'regular'
+        args.symbol = args.sta_kind
     # ------------------------
     args.model_name = args.model_name + '~' + 'cvae' if args.sta else args.model_name
+    
+    # 其他
     system_type = sys.platform  # 操作系统
     begin_time = time.time()
+    
+    # 训练
     for seed in range(args.begin_seed, args.end_seed + 1):
         seed_torch(seed)
         CKP_PATH = f'ckpt/{"/".join(args.model_name.split("_"))}_{args.symbol}/{seed}/{system_type}.pt'
         # train
-        agent = DQNAgent(env, memory_size, batch_size, target_update, seed, n_step=1)
+        agent = DQNAgent(env, memory_size, batch_size, target_update, seed, distance_threshold=0.2, n_step=1)
         scores, losses = agent.train(args.step)
         
         train_time = (time.time() - begin_time) / 60
