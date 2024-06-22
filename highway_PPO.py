@@ -25,11 +25,11 @@ parser = argparse.ArgumentParser(description='highway_PPO 任务')
 parser.add_argument('--model_name', default="highway_PPO", type=str, help='任务_基本算法名称')
 parser.add_argument('--cvae', default=False, type=bool, help='是否利用vae辅助，"expert"或"regular"')
 parser.add_argument('--cvae_pretrain', default='expert', type=str, help='cvae 预训练模型类型，"expert"或"regular"')
-parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
+parser.add_argument('-w', '--writer', default=0, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
-parser.add_argument('-e', '--episodes', default=200, type=int, help='运行回合数')
-parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
-parser.add_argument('--end_seed', default=42, type=int, help='结束种子')
+parser.add_argument('-e', '--episodes', default=400, type=int, help='运行回合数')
+parser.add_argument('--begin_seed', default=1, type=int, help='起始种子')
+parser.add_argument('--end_seed', default=7, type=int, help='结束种子')
 args = parser.parse_args()
 
 if args.writer == 2:
@@ -161,25 +161,21 @@ if __name__ == '__main__':
     mission = args.model_name.split('_')[0]
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     env = gym.make('highway-fast-v0')
-    # env = gym.make("highway-v0", render_mode='human')
     env.configure({
-        "lanes_count": 3,
-        "vehicles_density": 1.5,
+        "lanes_count": 4,
+        "vehicles_density": 2,
         "duration": 100,
-        "collision_reward": -30,
-        "right_lane_reward": 0.2,
-        "high_speed_reward": 0,
-        "reward_speed_range": [5, 40],
-        "offroad_terminal": False,
     })
     # PPO相关
-    actor_lr = 5e-4
-    critic_lr = 1e-3
+    actor_lr = 1e-3
+    critic_lr = 1e-2
     lmbda = 0.95  # 似乎可以去掉，这一项仅用于调整计算优势advantage时，额外调整折算奖励的系数
     gamma = 0.98  # 时序差分学习率，也作为折算奖励的系数之一
-    total_epochs = 1  # 迭代轮数
-    eps = 0.15  # 截断范围参数, 1-eps ~ 1+eps
-    epochs = 20  # PPO中一条序列训练多少轮，和迭代算法无关
+    total_epochs = 15  # 迭代轮数
+    total_episodes = 100  # 一轮训练多少次游戏
+
+    eps = 0.2  # 截断范围参数, 1-eps ~ 1+eps
+    epochs = 10  # PPO中一条序列训练多少轮，和迭代算法无关
 
     # 神经网络相关
     hidden_dim = 128
@@ -197,7 +193,7 @@ if __name__ == '__main__':
 
     # 任务相关
     system_type = sys.platform  # 操作系统
-    args.model_name = args.model_name + '~' +  args.cvae_kind
+    # args.model_name = args.model_name + '~' +  args.cvae_kind
     print('device:', device)
 
     # * ----------------------- 训练 ----------------------------

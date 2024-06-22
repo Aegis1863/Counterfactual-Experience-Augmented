@@ -14,8 +14,8 @@ import random
 import numpy as np
 import torch
 import seaborn as sns
-from segment_tree import SumSegmentTree, MinSegmentTree
-from types import List, Dict
+from utils.segment_tree import SumSegmentTree, MinSegmentTree
+from typing import List, Dict
 
 def read_ckp(ckp_path: str, agent: object, model_name: str, buffer_size: int = 0):
     """读取已有数据, 如果报错, 可以先删除存档"""
@@ -153,11 +153,11 @@ def train_PPO_agent(
             save_PPO_data(writer, return_list, time_list, seed_list, 
                           ckpt_path, epoch, episode, best_weight, seed)
             # 记录时间
-            if episode % 10 == 0:
+            if episode % 40 == 0:
                 # 打印回合信息
                 duration_time = (time.time() - episode_begin_time) / 6
                 print('\033[32m[ %d, <%d/%d>, %.2f min ]\033[0m: return: %d'
-                  % (seed, episode+1, total_episodes, duration_time, np.mean(return_list[-10:])))
+                  % (seed, episode+1, total_episodes, duration_time, np.mean(return_list[-40:])))
 
             s_episode = 0
     env.close()
