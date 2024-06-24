@@ -33,7 +33,7 @@ parser.add_argument('--symbol', default='Normal', type=str, help='特殊唯一�
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
-parser.add_argument('-e', '--step', default=20000, type=int, help='运行回合数')
+parser.add_argument('-e', '--step', default=20000, type=int, help='运行步数')
 parser.add_argument('-b', '--buffer_size', default=20000, type=int, help='经验池大小')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=45, type=int, help='结束种子')

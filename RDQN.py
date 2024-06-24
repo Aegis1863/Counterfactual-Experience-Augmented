@@ -29,15 +29,21 @@ import warnings
 warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='RDQN 任务')
-parser.add_argument('--model_name', default="sumo_RDQN", type=str, help='模型名称, 任务_模型')
-parser.add_argument('--symbol', default='Normal', type=str, help='特殊唯一标识')
+parser.add_argument('--model_name', default="RDQN", type=str, help='模型名称, 任务_模型')
+parser.add_argument('--mission', default="highway", type=str, help='任务名称')
+parser.add_argument('-n', '--net', default="env/big-intersection/big-intersection.net.xml", type=str, help='SUMO路网文件路径')
+parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersection.rou.xml", type=str, help='SUMO车流文件路径')
+parser.add_argument('-w', '--writer', default=0, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
+parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
-parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
-parser.add_argument('-e', '--step', default=12000, type=int, help='运行回合数')
-parser.add_argument('-b', '--buffer_size', default=20000, type=int, help='经验池大小')
-parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
-parser.add_argument('--end_seed', default=45, type=int, help='结束种子')
+parser.add_argument('-e', '--step', default=20000, type=int, help='运行回合数, sumo 60000, highway 20000')
+parser.add_argument('-r', '--reward', default='diff-waiting-time', type=str, help='奖励函数')
+parser.add_argument('--begin_time', default=1000, type=int, help='回合开始时间')
+parser.add_argument('--duration', default=2000, type=int, help='单回合运行时间')
+parser.add_argument('--begin_seed', default=1, type=int, help='起始种子')
+parser.add_argument('--end_seed', default=7, type=int, help='结束种子')
+
 args = parser.parse_args()
 
 def save_DQN_data(replay_buffer, return_list, time_list, pool_list,
@@ -627,7 +633,7 @@ class DQNAgent:
             n_step (int): step number to calculate n-step td error
         """
         # obs_dim = torch.multiply(*env.observation_space.shape)
-        obs_dim = env.observation_space.shape[0]
+        obs_dim = env.observation_space.shape[0] if args.mission == 'sumo' else torch.multiply(*env.observation_space.shape)
         self.action_dim = env.action_space.n
         
         self.env = env
@@ -925,23 +931,31 @@ class DQNAgent:
         plt.title('loss')
         plt.plot(losses)
         # plt.show()
-        file_path = f'image/tmp/{mission}/{args.symbol}'
+        file_path = f'image/tmp/{args.mission}/{args.symbol}'
         os.makedirs(file_path) if not os.path.exists(file_path) else None
-        plt.savefig(f'{file_path}/{self.seed}_{model_name}_{system_type}.pdf')
+        plt.savefig(f'{file_path}/{self.seed}_{args.model_name}_{system_type}.pdf')
 
 if __name__ == '__main__':
-    seed = 42
     # environment
-    env = gym.make('sumo-rl-v0',
-            net_file="env/big-intersection/big-intersection.net.xml",
-            route_file="env/big-intersection/big-intersection.rou.xml",
-            use_gui=False,
-            begin_time=1000,
-            num_seconds=2000,
-            # reward_fn=args.reward,
-            sumo_warnings=False,
-            # sumo_seed=seed,  # 需要切换种子
-            additional_sumo_cmd='--no-step-log')
+    if args.mission == 'sumo':
+        env = gym.make('sumo-rl-v0',
+                    net_file=args.net,
+                    route_file=args.flow,
+                    use_gui=False,
+                    begin_time=args.begin_time,
+                    num_seconds=args.duration,
+                    reward_fn=args.reward,
+                    sumo_seed=args.begin_seed,
+                    sumo_warnings=False,
+                    additional_sumo_cmd='--no-step-log')
+    else: 
+        env = gym.make('highway-fast-v0')
+        env.configure({
+            "lanes_count": 4,
+            "vehicles_density": 2,
+            "duration": 100,
+        })
+        
     def seed_torch(seed):
         np.random.seed(seed)
         random.seed(seed)
@@ -952,17 +966,14 @@ if __name__ == '__main__':
             torch.backends.cudnn.deterministic = True
 
     # parameters
-    memory_size = args.buffer_size
+    memory_size = 20000
     batch_size = 128
     target_update = 100
-
-    mission = args.model_name.split('_')[0]
-    model_name = args.model_name.split('_')[1]
 
     # VAE
     # --------- 调试用 --------
     if sys.platform != 'linux':
-        args.sta = True
+        args.sta = False
         args.sta_kind = 'expert'
         args.symbol = args.sta_kind
     # ------------------------
