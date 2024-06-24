@@ -219,21 +219,15 @@ def train_SAC_agent(
     best_score = -1e10  # 初始分数
     for epoch in range(s_epoch, total_epochs):
         for episode in range(s_episode, total_episodes):
-            env_pool = ReplayBuffer(5000)  # 环境模型经验
             episode_begin_time = time.time()
             episode_return = 0
             step = 0
-            state, done, truncated = env.reset()[0], False, False
+            state, done, truncated = env.reset(seed=seed)[0], False, False
+            state = state.reshape(-1)
             while not (done | truncated):
-                # if step % 50 == 0 and step > 0 and dynamic_model:
-                #     train_model(dynamic_model, env_pool)
-                #     rollout_model(agent, dynamic_model, roll_step, 
-                #                   rollout_batch_size, env_pool, replay_buffer)
                 action = agent.take_action(state)
                 next_state, reward, done, truncated, info = env.step(action)
-                # if dynamic_model and step < 100:
-                #     env_pool.add(state, action, reward, next_state, done, truncated)
-                
+                next_state = next_state.reshape(-1)
                 replay_buffer.add(state, action, reward, next_state, done, truncated)
                 state = next_state
                 episode_return += reward
@@ -261,8 +255,9 @@ def train_SAC_agent(
                 save_SAC_data(writer, replay_buffer, return_list,
                               time_list, seed_list, ckpt_path, epoch, episode, best_weight, seed)
             episode_time = (time.time() - episode_begin_time) // 60
-            print('\033[32m[ %d, <%d/%d>, %.2f min ]\033[0m: return: %d'
-                  % (seed, episode+1, total_episodes, episode_time, episode_return))
+            if episode % 40 == 0:
+                print('\033[32m[ %d, <%d/%d>, %.2f min ]\033[0m: return: %d'
+                  % (seed, episode+1, total_episodes, episode_time, np.mean(return_list[-40:])))
         s_episode = 0
     env.close()
     agent.actor.load_state_dict(actor_best_weight)
