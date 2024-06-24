@@ -23,12 +23,12 @@ warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='highway_PPO 任务')
 parser.add_argument('--model_name', default="highway_PPO", type=str, help='任务_基本算法名称')
-parser.add_argument('--cvae', default=False, type=bool, help='是否利用vae辅助，"expert"或"regular"')
-parser.add_argument('--cvae_pretrain', default='expert', type=str, help='cvae 预训练模型类型，"expert"或"regular"')
-parser.add_argument('-w', '--writer', default=0, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
+parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
+parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
+parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
-parser.add_argument('-e', '--episodes', default=400, type=int, help='运行回合数')
-parser.add_argument('--begin_seed', default=4, type=int, help='起始种子')
+parser.add_argument('-e', '--episodes', default=500, type=int, help='运行回合数')
+parser.add_argument('--begin_seed', default=1, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=7, type=int, help='结束种子')
 args = parser.parse_args()
 
@@ -68,7 +68,7 @@ class PPO:
         state_dim: int,
         hidden_dim: int,
         action_dim: int,
-        cvae: object=None,
+        sta: object,
         actor_lr: float=1e-4,
         critic_lr: float=5e-3,
         gamma: float=0.9,
@@ -87,11 +87,11 @@ class PPO:
         self.epochs = epochs  # 一条序列的数据用来训练轮数
         self.eps = eps  # PPO中截断范围的参数
         self.device = device
-        if cvae:
-            self.cvae = cvae.to(device)
-            self.cvae_optimizer = torch.optim.Adam(self.cvae.parameters(), lr=1e-3)
+        if sta:
+            self.sta = cvae.to(device)
+            self.sta_optimizer = torch.optim.Adam(self.sta.parameters(), lr=1e-3)
         else:
-            self.cvae = None
+            self.sta = None
 
     def take_action(self, state) -> list:
         state = torch.tensor(state[np.newaxis, :], dtype=torch.float).to(self.device)
@@ -109,16 +109,16 @@ class PPO:
         truncated = torch.tensor(np.array(transition_dict['truncated']), dtype=torch.int).view(-1, 1).to(self.device)
         
         # * 技巧
-        if not args.cvae_pretrain:  # 在线训练
-            self.train_cvae(states, next_states)  # 训练 vae, 如果是已经预训练好的就无需训练
-            self.cvae.generate_test(16, 4, save_path='imgae/highway_vae/')  # 生成 cvae 图像观察效果
-        if self.cvae:
+        if not args.sta_kind and args.sta:  # ! 在线训练
+            loss = self.train_cvae(states, next_states, False, states.shape[0]//400)  # 训练 vae, 如果数据比较少则batch_size一定要小
+            quality = self.sta.generate_test(32, 4, save_path=f'image/{mission}/{args.model_name}/')  # 生成 cvae 图像观察效果
+        if self.sta:
             pre_next_state = self.predict_next_state(states, next_states)
             target_q1 = self.critic(pre_next_state).detach()
             target_q2 = self.critic(next_states).detach()
             target_q = torch.min(target_q1, target_q2)
         else:
-            target_q = self.critic(next_states).detach()
+            target_q = self.critic(next_states)
             
         td_target = rewards + self.gamma * target_q * (1 - dones | truncated)
         td_delta = td_target - self.critic(states)
@@ -139,20 +139,6 @@ class PPO:
             critic_loss.backward()
             self.actor_optimizer.step()
             self.critic_optimizer.step()
-            
-    def train_cvae(self, state, next_state):
-        vae_action = next_state[:, :4]
-        diff_state = next_state[:, 5:] - state[:, 5:]
-        train_loss = cvae_train(self.cvae, diff_state, vae_action, self.cvae_optimizer)
-        return train_loss
-    
-    def predict_next_state(self, state, next_state):
-        action = state[:, :4]
-        with torch.no_grad():
-            sample = torch.randn(state.shape[0], 32).to(device)  # 随机采样的
-            generated = self.cvae.decode(sample, action)
-        pre_next_state = torch.concat([next_state[:, :5], state[:, 5:] + generated], dim=-1)
-        return pre_next_state
     
     
 # * --------------------- 参数 -------------------------
@@ -167,10 +153,10 @@ if __name__ == '__main__':
         "duration": 100,
     })
     # PPO相关
-    actor_lr = 1e-4
-    critic_lr = 1e-3
+    actor_lr = 3e-4
+    critic_lr = 3e-4
     lmbda = 0.95  # 似乎可以去掉，这一项仅用于调整计算优势advantage时，额外调整折算奖励的系数
-    gamma = 0.98  # 时序差分学习率，也作为折算奖励的系数之一
+    gamma = 0.99  # 时序差分学习率，也作为折算奖励的系数之一
     total_epochs = 15  # 迭代轮数
     total_episodes = 100  # 一轮训练多少次游戏
 
@@ -183,8 +169,8 @@ if __name__ == '__main__':
     action_dim = env.action_space.n
 
     # VAE
-    if args.cvae:
-        if args.cvae_pretrain:
+    if args.sta:
+        if args.sta_pretrain:
             cvae = torch.load(f'model/cvae/{mission}/{args.cvae_kind}.pt', map_location=device)
         else:
             cvae = CVAE(state_dim, action_dim, state_dim)  # 在线训练

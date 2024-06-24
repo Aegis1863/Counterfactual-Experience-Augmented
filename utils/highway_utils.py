@@ -120,7 +120,7 @@ def train_PPO_agent(
                 "truncated": [],
             }
             episode_return = 0
-            state, done, truncated = env.reset()[0], False, False
+            state, done, truncated = env.reset(seed=seed)[0], False, False
             state = state.reshape(-1)
             while not (done | truncated):
                 action = agent.take_action(state)
@@ -326,7 +326,7 @@ def train_DQN(
     for epoch in range(s_epoch, total_epoch):
         for episode in range(s_episode, total_episodes):
             episode_return = 0
-            state, done, truncated = env.reset()[0], False, False
+            state, done, truncated = env.reset(seed=seed)[0], False, False
             state = state.reshape(-1)
             while not done | truncated:
                 action = agent.take_action(state)

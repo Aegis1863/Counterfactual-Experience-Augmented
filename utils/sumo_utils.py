@@ -116,7 +116,7 @@ def train_PPO_agent(
     seed_list: list,
     seed: int,
     ckpt_path: str,
-    dynamic_model: object = None,
+    # dynamic_model: object = None,
 ):
     """
     同策略, 没有经验池, 仅限演员评论员框架
@@ -137,7 +137,7 @@ def train_PPO_agent(
                 "truncated": [],
             }
             episode_return = 0
-            state, done, truncated = env.reset()[0], False, False
+            state, done, truncated = env.reset(seed=seed)[0], False, False
             while not (done | truncated):
                 action = agent.take_action(state)
                 next_state, reward, done, truncated, info = env.step(action)
