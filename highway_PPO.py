@@ -158,7 +158,7 @@ if __name__ == '__main__':
     critic_lr = 3e-4
     lmbda = 0.95  # 似乎可以去掉，这一项仅用于调整计算优势advantage时，额外调整折算奖励的系数
     gamma = 0.99  # 时序差分学习率，也作为折算奖励的系数之一
-    total_epochs = 15  # 迭代轮数
+    total_epochs = 1  # 迭代轮数
     total_episodes = 100  # 一轮训练多少次游戏
 
     eps = 0.2  # 截断范围参数, 1-eps ~ 1+eps
