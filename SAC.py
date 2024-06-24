@@ -23,8 +23,8 @@ import argparse
 import warnings
 warnings.filterwarnings('ignore')
 
-parser = argparse.ArgumentParser(description='MBPO 任务')
-parser.add_argument('--model_name', default="MBPO", type=str, help='基本算法名称')
+parser = argparse.ArgumentParser(description='SAC 任务')
+parser.add_argument('--model_name', default="SAC", type=str, help='基本算法名称')
 parser.add_argument('--mission', default="highway", type=str, help='任务名称')
 parser.add_argument('-n', '--net', default="env/big-intersection/big-intersection.net.xml", type=str, help='SUMO路网文件路径')
 parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersection.rou.xml", type=str, help='SUMO车流文件路径')
