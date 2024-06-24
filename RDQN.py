@@ -652,7 +652,7 @@ class DQNAgent:
             self.distance_threshold = distance_threshold  # ! 控制虚拟经验与真实经验的初始差距
             if args.sta_kind:  # 读取预训练模型
                 print(f'==> 读取{args.sta_kind} cvae模型')
-                path = f'model/cvae/{mission}/{args.sta_kind}.pt'
+                path = f'model/cvae/{args.mission}/{args.sta_kind}.pt'
                 self.sta = torch.load(path, map_location=self.device)
             else:
                 print(f'==> 在线训练 cvae模型')
