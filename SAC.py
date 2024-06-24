@@ -218,7 +218,7 @@ if __name__ == '__main__':
         replay_buffer = ReplayBuffer(buffer_size)
         agent = SAC(state_dim, hidden_dim, num_actions, actor_lr,
                     critic_lr, alpha_lr, target_entropy, tau, gamma, device)
-        s_epoch, s_episode, return_list, time_list, seed_list = read_ckp(CKP_PATH, agent, 'PPO')
+        s_epoch, s_episode, return_list, time_list, seed_list = read_ckp(CKP_PATH, agent, args.model_name)
         print('开始训练')
         return_list, train_time = train_SAC_agent(env, agent, args.writer, s_epoch, total_epochs,
                                                   s_episode, args.episodes, replay_buffer, minimal_size, 
