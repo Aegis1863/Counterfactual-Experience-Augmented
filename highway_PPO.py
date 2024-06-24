@@ -21,8 +21,9 @@ import argparse
 import warnings
 warnings.filterwarnings('ignore')
 
-parser = argparse.ArgumentParser(description='highway_PPO 任务')
-parser.add_argument('--model_name', default="highway_PPO", type=str, help='任务_基本算法名称')
+parser = argparse.ArgumentParser(description='PPO 任务')
+parser.add_argument('--model_name', default="PPO", type=str, help='任务_基本算法名称')
+parser.add_argument('--mission', default="highway", type=str, help='任务名称')
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
@@ -184,7 +185,7 @@ if __name__ == '__main__':
 
     # * ----------------------- 训练 ----------------------------
     for seed in range(args.begin_seed, args.end_seed + 1):
-        CKP_PATH = f'ckpt/{"/".join(args.model_name.split('_'))}/{seed}_{system_type}.pt'
+        CKP_PATH = f'ckpt/{args.mission}/{args.model_name}/{seed}_{system_type}.pt'
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)

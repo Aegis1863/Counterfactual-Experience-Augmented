@@ -28,7 +28,7 @@ import argparse
 import warnings
 warnings.filterwarnings('ignore')
 
-parser = argparse.ArgumentParser(description='DQN 任务')
+parser = argparse.ArgumentParser(description='RDQN 任务')
 parser.add_argument('--model_name', default="sumo_RDQN", type=str, help='模型名称, 任务_模型')
 parser.add_argument('--symbol', default='Normal', type=str, help='特殊唯一标识')
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')

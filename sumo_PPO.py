@@ -18,7 +18,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='sumo_PPO 任务')
-parser.add_argument('--model_name', default="sumo_PPO", type=str, help='任务_基本算法名称')
+parser.add_argument('--model_name', default="PPO", type=str, help='任务_基本算法名称')
+parser.add_argument('--mission', default="highway", type=str, help='任务名称')
 parser.add_argument('-n', '--net', default="env/big-intersection/big-intersection.net.xml", type=str, help='SUMO路网文件路径')
 parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersection.rou.xml", type=str, help='SUMO车流文件路径')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
@@ -208,7 +209,7 @@ if __name__ == '__main__':
 
     # * ----------------------- 训练 ----------------------------
     for seed in range(args.begin_seed, args.end_seed + 1):
-        CKP_PATH = f'ckpt/{"/".join(args.model_name.split('_'))}/{seed}_{system_type}.pt'
+        CKP_PATH = f'ckpt/{args.mission}/{args.model_name}/{seed}_{system_type}.pt'
         env = gym.make('sumo-rl-v0',
                 net_file=args.net,
                 route_file=args.flow,
