@@ -470,31 +470,37 @@ class MBPO:
         explore_return = self.explore()  # 模型未经训练时相当于随机探索，采集数据至动力模型经验池
         print('\n\033[32m[ Explore episode ]\033[0m: 1, return: %d' % explore_return)
         return_list.append(explore_return)
-
-        for i_episode in range(self.num_episode - 1):
-            obs, done, truncated, episode_return = self.env.reset(seed=seed)[0], False, False, 0
-            obs = obs.reshape(-1)
-            step = 0
-            while not done | truncated:
-                if step % 50 == 0:  # 每50步训练一次动力环境、推演并收集经验
-                    self.train_model()  # 训练动力环境
-                    self.rollout_model()  # 在动力环境的经验池采样状态并推演，将经验增加到策略经验池
+        with tqdm(total=self.num_episode - 1, mininterval=40, ncols=100) as pbar:
+            for i_episode in range(self.num_episode - 1):
+                obs, done, truncated, episode_return = self.env.reset(seed=seed)[0], False, False, 0
+                obs = obs.reshape(-1)
+                step = 0
+                while not done | truncated:
+                    if step % 50 == 0:  # 每50步训练一次动力环境、推演并收集经验
+                        self.train_model()  # 训练动力环境
+                        self.rollout_model()  # 在动力环境的经验池采样状态并推演，将经验增加到策略经验池
+                    
+                    action = self.agent.take_action(obs)
+                    next_obs, reward, done, truncated, info = self.env.step(action)
+                    next_obs = next_obs.reshape(-1)
+                    self.env_pool.add(obs, action, reward, next_obs, done, truncated)
+                    obs = next_obs
+                    episode_return += reward
+                    self.update_agent()
+                    step += 1
+                return_list.append(episode_return)
+                time_list.append(time.time())
+                seed_list.append(seed)
+                pool_list.append(self.env_pool.size())
+                if writer > 0:
+                    save_data()
+                pbar.set_postfix({
+                    'return': round(np.mean(return_list[-20:]), 2),
+                    'Pool size': pool_list[-1],
+                })
+                pbar.update(1)
                 
-                action = self.agent.take_action(obs)
-                next_obs, reward, done, truncated, info = self.env.step(action)
-                next_obs = next_obs.reshape(-1)
-                self.env_pool.add(obs, action, reward, next_obs, done, truncated)
-                obs = next_obs
-                episode_return += reward
-                self.update_agent()
-                step += 1
-            return_list.append(episode_return)
-            time_list.append(time.time())
-            seed_list.append(seed)
-            pool_list.append(self.env_pool.size())
-            if writer > 0:
-                save_data()
-            print('\n\033[32m[ Episode ]\033[0m %d, return: %d' % (i_episode + 2, episode_return))
+                # print('\n\033[32m[ Episode ]\033[0m %d, return: %d' % (i_episode + 2, episode_return))
         env.close()
         return return_list
 
@@ -561,7 +567,7 @@ if __name__ == '__main__':
     hidden_dim = 128
     gamma = 0.98
     tau = 0.005  # 软更新参数
-    buffer_size = 10000
+    buffer_size = 20000
     target_entropy = 0.98 * (-np.log(1 / env.action_space.n))
     model_alpha = 0.01  # 模型损失函数中的加权权重
     state_dim = env.observation_space.shape[0] if args.mission == 'sumo' else torch.multiply(*env.observation_space.shape)
@@ -582,5 +588,5 @@ if __name__ == '__main__':
         model_pool = ReplayBuffer(model_pool_size)
         mbpo = MBPO(env, agent, fake_env, env_pool, model_pool, rollout_length,
                     rollout_batch_size, real_ratio, args.episodes)
-        ckpt_path = f'sumo/MBPO'
+        ckpt_path = f'{args.mission}/MBPO'
         return_list = mbpo.train(seed, args.writer, ckpt_path)
