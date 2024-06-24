@@ -1,5 +1,4 @@
 import os
-
 os.environ['LIBSUMO_AS_TRACI'] = '1'  # 终端运行加速
 import sys
 import time
@@ -168,7 +167,7 @@ class SAC:
 if __name__ == '__main__':
     # 环境相关
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    # 环境相关
+
     if args.mission == 'sumo':
         env = gym.make('sumo-rl-v0',
                     net_file=args.net,

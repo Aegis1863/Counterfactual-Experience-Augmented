@@ -3,10 +3,12 @@ dueling DQN
 '''
 
 import os
+os.environ['LIBSUMO_AS_TRACI'] = '1'  # 终端运行加速
 import sys
 import random
 import gymnasium as gym
 import numpy as np
+import sumo_rl
 import torch
 import torch.nn.functional as F
 from utils.highway_utils import read_ckp, train_DQN
@@ -20,14 +22,18 @@ import warnings
 warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='DQN 任务')
-parser.add_argument('--model_name', default="highway_DQN", type=str, help='模型名称, 任务_模型')
+parser.add_argument('--model_name', default="DeulingDQN", type=str, help='模型名称, 任务_模型')
+parser.add_argument('--mission', default="sumo", type=str, help='任务名称')
 parser.add_argument('--symbol', default=None, type=str, help='特殊唯一标识')
-parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
-parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
+parser.add_argument('-n', '--net', default="env/big-intersection/big-intersection.net.xml", type=str, help='SUMO路网文件路径')
+parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersection.rou.xml", type=str, help='SUMO车流文件路径')
 parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
-parser.add_argument('-e', '--episodes', default=1000, type=int, help='运行回合数')
+parser.add_argument('-e', '--episodes', default=30, type=int, help='运行回合数')
 parser.add_argument('-b', '--buffer_size', default=25000, type=int, help='经验池大小')
+parser.add_argument('-r', '--reward', default='diff-waiting-time', type=str, help='奖励函数')
+parser.add_argument('--begin_time', default=1000, type=int, help='回合开始时间')
+parser.add_argument('--duration', default=2000, type=int, help='单回合运行时间')
 parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=44, type=int, help='结束种子')
 args = parser.parse_args()
@@ -58,7 +64,7 @@ class DQN:
     ''' DQN算法,包括Double DQN '''
     
     def __init__(self, state_dim, hidden_dim, action_dim, learning_rate,
-                 gamma, epsilon, update_interval, sta, distance_threshold=None, device='cpu'):
+                 gamma, epsilon, update_interval, device='cpu'):
         
         self.action_dim = action_dim
         self.q_net = VAnet(state_dim, hidden_dim, self.action_dim).to(device)
@@ -69,15 +75,7 @@ class DQN:
         self.update_interval = update_interval
         self.count = 0
         self.device = device
-        
-        if sta:
-            self.distance_threshold = distance_threshold
-            self.sta = cvae.to(device)
-            self.sta_optimizer = torch.optim.Adam(self.sta.parameters(), lr=1e-3)
-        else:
-            self.sta = None
-            self.distance_threshold = None
-
+        self.sta = None
 
     def take_action(self, state):
         if np.random.random() < self.epsilon:
@@ -139,15 +137,26 @@ class DQN:
 if __name__ == '__main__':
     # * --------------------- 参数 -------------------------
     # 环境相关
-    env = gym.make('highway-fast-v0')
-    env.configure({
-        "lanes_count": 4,
-        "vehicles_density": 2,
-        "duration": 100,
-    })
+    if args.mission == 'sumo':
+        env = gym.make('sumo-rl-v0',
+                    net_file=args.net,
+                    route_file=args.flow,
+                    use_gui=False,
+                    begin_time=args.begin_time,
+                    num_seconds=args.duration,
+                    reward_fn=args.reward,
+                    sumo_seed=args.begin_seed,
+                    sumo_warnings=False,
+                    additional_sumo_cmd='--no-step-log')
+    else: 
+        env = gym.make('highway-fast-v0')
+        env.configure({
+            "lanes_count": 4,
+            "vehicles_density": 2,
+            "duration": 100,
+        })
+        
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    mission = args.model_name.split('_')[0]
-    model_name = args.model_name.split('_')[1]
     
     # DQN相关
     total_epoch = 1  # 迭代数, 无需多次迭代
@@ -160,31 +169,9 @@ if __name__ == '__main__':
     
     # 神经网络相关
     lr = 2e-3
-    state_dim = torch.multiply(*env.observation_space.shape)
+    state_dim = env.observation_space.shape[0] if args.mission == 'sumo' else torch.multiply(*env.observation_space.shape)
     hidden_dim = 256
     action_dim = env.action_space.n
-
-    # VAE
-    
-    # ---- 调试用，上线删除 ----
-    if sys.platform != 'linux':
-        args.sta = True
-        args.sta_kind = 'regular'
-    # ------------------------
-    
-    if args.sta:
-        args.model_name = args.model_name + '~' + 'cvae'
-        distance_threshold = 0.1  # ! 控制虚拟经验与真实经验的差距
-        if args.sta_kind:  # 读取预训练模型
-            print(f'==> 读取{args.sta_kind} cvae模型')
-            args.model_name = args.model_name + '~' + args.sta_kind
-            cvae = torch.load(f'model/cvae/{mission}/{args.sta_kind}.pt', map_location=device)
-        else:
-            print(f'==> 在线训练 cvae模型')
-            cvae = CVAE(state_dim, action_dim, state_dim)  # 在线训练
-    else:
-        cvae = None
-        distance_threshold = None
 
     # 任务相关
     system_type = sys.platform  # 操作系统
@@ -192,11 +179,11 @@ if __name__ == '__main__':
 
     # * ----------------------- 训练 ----------------------------
     for seed in range(args.begin_seed, args.end_seed + 1):
-        CKP_PATH = f'ckpt/{"/".join(args.model_name.split('_'))}/{seed}/{system_type}.pt'
+        CKP_PATH = f'ckpt/{args.mission}/{args.model_name}/{seed}_{system_type}.pt'
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
-        agent = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon, update_interval, cvae, distance_threshold, device)
+        agent = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon, update_interval, device)
 
         (s_epoch, s_episode, return_list, 
         time_list, seed_list, replay_buffer) = read_ckp(CKP_PATH, agent,  args.model_name, args.buffer_size)
@@ -224,5 +211,5 @@ if __name__ == '__main__':
         plt.title(f'{args.model_name}, training time: {train_time} min')
         plt.xlabel('Episode')
         plt.ylabel('Return')
-        plt.savefig(f'image/tmp/{mission}/{args.symbol}_{model_name}_{system_type}.pdf')
+        plt.savefig(f'image/tmp/{args.mission}/{args.symbol}_{args.model_name}_{system_type}.pdf')
         plt.close()

@@ -276,23 +276,24 @@ def save_SAC_data(writer, replay_buffer, return_list, time_list,
             "pool_size": replay_buffer.size(),
             })
     # 训练权重存档
-    torch.save(
-        {
-            "epoch": epoch,
-            "episode": episode,
-            "actor_best_weight": actor_best_weight,
-            "critic_1_best_weight": critic_1_best_weight,
-            "critic_2_best_weight": critic_2_best_weight,
-            "return_list": return_list,
-            "time_list": time_list,
-            "seed_list": seed_list,
-            "replay_buffer": replay_buffer,
-        },
-        ckpt_path,
-    )
+    if writer > 0:
+        torch.save(
+            {
+                "epoch": epoch,
+                "episode": episode,
+                "actor_best_weight": actor_best_weight,
+                "critic_1_best_weight": critic_1_best_weight,
+                "critic_2_best_weight": critic_2_best_weight,
+                "return_list": return_list,
+                "time_list": time_list,
+                "seed_list": seed_list,
+                "replay_buffer": replay_buffer,
+            },
+            ckpt_path,
+        )
 
-    # 绘图数据存档
-    save_plot_data(return_list, time_list, seed_list, 
+        # 绘图数据存档
+        save_plot_data(return_list, time_list, seed_list, 
                    ckpt_path, seed, replay_buffer.size())
 
 
