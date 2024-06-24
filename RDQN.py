@@ -934,7 +934,7 @@ class DQNAgent:
         plt.title('loss')
         plt.plot(losses)
         # plt.show()
-        file_path = f'image/tmp/{args.mission}/{args.symbol}'
+        file_path = f'image/tmp/{args.mission}/{args.model_name}'
         os.makedirs(file_path) if not os.path.exists(file_path) else None
         plt.savefig(f'{file_path}/{self.seed}_{args.model_name}_{system_type}.pdf')
 
@@ -978,7 +978,6 @@ if __name__ == '__main__':
     if sys.platform != 'linux':
         args.sta = True
         args.sta_kind = 'regular'
-        args.symbol = args.sta_kind
     # ------------------------
     args.model_name = args.model_name + '~' + 'cvae' if args.sta else args.model_name
     
@@ -989,7 +988,7 @@ if __name__ == '__main__':
     # 训练
     for seed in range(args.begin_seed, args.end_seed + 1):
         seed_torch(seed)
-        CKP_PATH = f'ckpt/{"/".join(args.model_name.split("_"))}_{args.symbol}/{seed}/{system_type}.pt'
+        CKP_PATH = f'ckpt/{args.mission}/{args.model_name}/{seed}_{system_type}.pt'
         # train
         agent = DQNAgent(env, memory_size, batch_size, target_update, seed, distance_threshold=0.1, n_step=1)
         scores, losses = agent.train(args.step)
