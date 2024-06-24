@@ -167,7 +167,6 @@ class SAC:
 # * --------------------- 参数 -------------------------
 if __name__ == '__main__':
     # 环境相关
-    mission = args.model_name.split('_')[0]
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     # 环境相关
     if args.mission == 'sumo':
@@ -212,7 +211,7 @@ if __name__ == '__main__':
 
     # * ----------------------- 训练 ----------------------------
     for seed in range(args.begin_seed, args.end_seed + 1):
-        CKP_PATH = f'ckpt/{"/".join(args.model_name.split('_'))}/{seed}_{system_type}.pt'
+        CKP_PATH = f'ckpt/{args.mission}/{args.model_name}/{seed}_{system_type}.pt'
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)

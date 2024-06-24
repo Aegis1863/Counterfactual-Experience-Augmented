@@ -588,5 +588,5 @@ if __name__ == '__main__':
         model_pool = ReplayBuffer(model_pool_size)
         mbpo = MBPO(env, agent, fake_env, env_pool, model_pool, rollout_length,
                     rollout_batch_size, real_ratio, args.episodes)
-        ckpt_path = f'{args.mission}/MBPO'
+        ckpt_path = f'{args.mission}/{args.model_name}'
         return_list = mbpo.train(seed, args.writer, ckpt_path)
