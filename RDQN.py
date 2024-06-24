@@ -33,7 +33,7 @@ parser.add_argument('--model_name', default="RDQN", type=str, help='模型名称
 parser.add_argument('--mission', default="highway", type=str, help='任务名称')
 parser.add_argument('-n', '--net', default="env/big-intersection/big-intersection.net.xml", type=str, help='SUMO路网文件路径')
 parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersection.rou.xml", type=str, help='SUMO车流文件路径')
-parser.add_argument('-w', '--writer', default=0, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
+parser.add_argument('-w', '--writer', default=0, type=int, help='存档等级, 0: 不存，1: 本地')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
@@ -111,11 +111,13 @@ def counterfactual_exp_expand(replay_buffer, sta, batch_size, action_space_size,
     diff_state = sta.inference(one_hot_cf_actions)
 
     # 扩展状态以匹配反事实状态转移
-    # * ---- sumo 特性 ----
-    expand_b_s = b_s.repeat_interleave(action_space_size - 1, dim=0)
-    expand_b_ns = b_s.repeat_interleave(action_space_size - 1, dim=0)
-    b_ns_prime = torch.cat([expand_b_ns[:, :5], expand_b_s[:, 5:] + diff_state], dim=-1)
-    # * ------------------
+    if args.mission == 'sumo':
+        expand_b_s = b_s.repeat_interleave(action_space_size - 1, dim=0)
+        expand_b_ns = b_s.repeat_interleave(action_space_size - 1, dim=0)
+        b_ns_prime = torch.cat([expand_b_ns[:, :5], expand_b_s[:, 5:] + diff_state], dim=-1)
+    elif args.mission == 'highway':
+        expand_b_s = b_s.repeat_interleave(action_space_size - 1, dim=0)
+        b_ns_prime = expand_b_s + diff_state
 
     # 读取所有真实经验
     all_samples = replay_buffer.retrieve_real_experiences()
@@ -836,8 +838,9 @@ class DQNAgent:
                 # 其他记录信息
                 pbar.update(1)
             # 保存数据
-            save_DQN_data(self.memory, scores, time_list, pool_list, seed_list, CKP_PATH, 
-                            0, frame_idx, 0, best_weight, seed)
+            if args.writer > 1:
+                save_DQN_data(self.memory, scores, time_list, pool_list, seed_list, CKP_PATH, 
+                                0, frame_idx, 0, best_weight, seed)
         self._plot(frame_idx, scores, losses)
         self.env.close()
         return scores, losses
@@ -973,8 +976,8 @@ if __name__ == '__main__':
     # VAE
     # --------- 调试用 --------
     if sys.platform != 'linux':
-        args.sta = False
-        args.sta_kind = 'expert'
+        args.sta = True
+        args.sta_kind = 'regular'
         args.symbol = args.sta_kind
     # ------------------------
     args.model_name = args.model_name + '~' + 'cvae' if args.sta else args.model_name
@@ -988,7 +991,7 @@ if __name__ == '__main__':
         seed_torch(seed)
         CKP_PATH = f'ckpt/{"/".join(args.model_name.split("_"))}_{args.symbol}/{seed}/{system_type}.pt'
         # train
-        agent = DQNAgent(env, memory_size, batch_size, target_update, seed, distance_threshold=0.2, n_step=1)
+        agent = DQNAgent(env, memory_size, batch_size, target_update, seed, distance_threshold=0.1, n_step=1)
         scores, losses = agent.train(args.step)
         
         train_time = (time.time() - begin_time) / 60
