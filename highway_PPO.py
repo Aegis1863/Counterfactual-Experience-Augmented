@@ -28,7 +28,7 @@ parser.add_argument('--cvae_pretrain', default='expert', type=str, help='cvae �
 parser.add_argument('-w', '--writer', default=0, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
 parser.add_argument('-e', '--episodes', default=400, type=int, help='运行回合数')
-parser.add_argument('--begin_seed', default=1, type=int, help='起始种子')
+parser.add_argument('--begin_seed', default=4, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=7, type=int, help='结束种子')
 args = parser.parse_args()
 
@@ -167,8 +167,8 @@ if __name__ == '__main__':
         "duration": 100,
     })
     # PPO相关
-    actor_lr = 1e-3
-    critic_lr = 1e-2
+    actor_lr = 1e-4
+    critic_lr = 1e-3
     lmbda = 0.95  # 似乎可以去掉，这一项仅用于调整计算优势advantage时，额外调整折算奖励的系数
     gamma = 0.98  # 时序差分学习率，也作为折算奖励的系数之一
     total_epochs = 15  # 迭代轮数

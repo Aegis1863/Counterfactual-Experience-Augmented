@@ -21,23 +21,24 @@ import argparse
 import warnings
 warnings.filterwarnings('ignore')
 
-parser = argparse.ArgumentParser(description='sumo_PPO 任务')
-parser.add_argument('--model_name', default="sumo_PPO", type=str, help='任务_基本算法名称')
+parser = argparse.ArgumentParser(description='MBPO 任务')
+parser.add_argument('--model_name', default="MBPO", type=str, help='基本算法名称')
+parser.add_argument('--mission', default="highway", type=str, help='任务名称')
 parser.add_argument('-n', '--net', default="env/big-intersection/big-intersection.net.xml", type=str, help='SUMO路网文件路径')
 parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersection.rou.xml", type=str, help='SUMO车流文件路径')
-parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
+parser.add_argument('-w', '--writer', default=0, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
-parser.add_argument('-e', '--episodes', default=30, type=int, help='运行回合数')
+parser.add_argument('-e', '--episodes', default=500, type=int, help='运行回合数')
 parser.add_argument('-r', '--reward', default='diff-waiting-time', type=str, help='奖励函数')
 parser.add_argument('--begin_time', default=1000, type=int, help='回合开始时间')
 parser.add_argument('--duration', default=2000, type=int, help='单回合运行时间')
-parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
-parser.add_argument('--end_seed', default=52, type=int, help='结束种子')
+parser.add_argument('--begin_seed', default=1, type=int, help='起始种子')
+parser.add_argument('--end_seed', default=7, type=int, help='结束种子')
 
 args = parser.parse_args()
-
+args.model_name = args.mission + '_' + args.model_name
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class PolicyNet(torch.nn.Module):
@@ -424,9 +425,11 @@ class MBPO:
 
     def explore(self):
         obs, done, truncated, episode_return = self.env.reset()[0], False, False, 0
+        obs = obs.reshape(-1)
         while not done | truncated:
             action = self.agent.take_action(obs)
             next_obs, reward, done, truncated, info = self.env.step(action)
+            next_obs = next_obs.reshape(-1)
             self.env_pool.add(obs, action, reward, next_obs, done, truncated)
             obs = next_obs
             episode_return += reward
@@ -434,9 +437,12 @@ class MBPO:
 
     def train(self, seed, writer, ckpt_path):
         def save_data():
-            os.makedirs(ckpt_path) if not os.path.exists(ckpt_path) else None
-            alg_name = ckpt_path.split('/')[1]
             system_type = sys.platform
+            ckpt = f'ckpt/{ckpt_path}'
+            csv_path = f'data/plot_data/{ckpt_path}'
+            os.makedirs(ckpt) if not os.path.exists(ckpt) else None
+            os.makedirs(csv_path) if not os.path.exists(csv_path) else None
+            alg_name = ckpt_path.split('/')[1]
             torch.save(
                 {
                     "episode": i_episode,
@@ -447,7 +453,7 @@ class MBPO:
                     "pool_list": pool_list,
                     "replay_buffer": self.model_pool,
                 },
-                f'ckpt/{ckpt_path}/{seed}_{system_type}.pt',
+                f'{ckpt}/{seed}_{system_type}.pt',
             )
             return_save = pd.DataFrame({
                 'Algorithm': [alg_name] * len(return_list),
@@ -455,9 +461,7 @@ class MBPO:
                 "Return": return_list,
                 "Pool size": pool_list,
                 })
-            return_save.to_csv(f'data/plot_data/{ckpt_path}/{seed}_{system_type}.csv', 
-                               index=False, 
-                               encoding='utf-8-sig')
+            return_save.to_csv(f'{csv_path}/{seed}_{system_type}.csv', index=False, encoding='utf-8-sig')
             
         return_list = []
         time_list = [time.time()]
@@ -469,6 +473,7 @@ class MBPO:
 
         for i_episode in range(self.num_episode - 1):
             obs, done, truncated, episode_return = self.env.reset(seed=seed)[0], False, False, 0
+            obs = obs.reshape(-1)
             step = 0
             while not done | truncated:
                 if step % 50 == 0:  # 每50步训练一次动力环境、推演并收集经验
@@ -477,6 +482,7 @@ class MBPO:
                 
                 action = self.agent.take_action(obs)
                 next_obs, reward, done, truncated, info = self.env.step(action)
+                next_obs = next_obs.reshape(-1)
                 self.env_pool.add(obs, action, reward, next_obs, done, truncated)
                 obs = next_obs
                 episode_return += reward
@@ -527,16 +533,25 @@ if __name__ == '__main__':
             torch.backends.cudnn.deterministic = True
     
     # 环境相关
-    env = gym.make('sumo-rl-v0',
-                net_file=args.net,
-                route_file=args.flow,
-                use_gui=False,
-                begin_time=args.begin_time,
-                num_seconds=args.duration,
-                reward_fn=args.reward,
-                sumo_seed=args.begin_seed,
-                sumo_warnings=False,
-                additional_sumo_cmd='--no-step-log')
+    if args.mission == 'sumo':
+        env = gym.make('sumo-rl-v0',
+                    net_file=args.net,
+                    route_file=args.flow,
+                    use_gui=False,
+                    begin_time=args.begin_time,
+                    num_seconds=args.duration,
+                    reward_fn=args.reward,
+                    sumo_seed=args.begin_seed,
+                    sumo_warnings=False,
+                    additional_sumo_cmd='--no-step-log')
+    else: 
+        env = gym.make('highway-fast-v0')
+        env.configure({
+            "lanes_count": 4,
+            "vehicles_density": 2,
+            "duration": 100,
+        })
+    
 
     real_ratio = 0.5
 
@@ -549,7 +564,7 @@ if __name__ == '__main__':
     buffer_size = 10000
     target_entropy = 0.98 * (-np.log(1 / env.action_space.n))
     model_alpha = 0.01  # 模型损失函数中的加权权重
-    state_dim = env.observation_space.shape[0]
+    state_dim = env.observation_space.shape[0] if args.mission == 'sumo' else torch.multiply(*env.observation_space.shape)
     num_actions = env.action_space.n
     action_dim = 1
 
@@ -567,5 +582,5 @@ if __name__ == '__main__':
         model_pool = ReplayBuffer(model_pool_size)
         mbpo = MBPO(env, agent, fake_env, env_pool, model_pool, rollout_length,
                     rollout_batch_size, real_ratio, args.episodes)
-        ckpt_path = f'sumo/MBPO/'
+        ckpt_path = f'sumo/MBPO'
         return_list = mbpo.train(seed, args.writer, ckpt_path)
