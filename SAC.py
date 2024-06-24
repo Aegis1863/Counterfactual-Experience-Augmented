@@ -39,7 +39,6 @@ parser.add_argument('--begin_seed', default=1, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=7, type=int, help='结束种子')
 
 args = parser.parse_args()
-args.model_name = args.mission + '_' + args.model_name
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class PolicyNet(torch.nn.Module):
@@ -209,7 +208,7 @@ if __name__ == '__main__':
     print('device:', device)
 
     # * ----------------------- 训练 ----------------------------
-    for seed in range(args.begin_seed, args.end_seed + 1):
+    for seed in trange(args.begin_seed, args.end_seed + 1, mininterval=40, ncols=100):
         CKP_PATH = f'ckpt/{args.mission}/{args.model_name}/{seed}_{system_type}.pt'
         random.seed(seed)
         np.random.seed(seed)

@@ -255,9 +255,9 @@ def train_SAC_agent(
                 save_SAC_data(writer, replay_buffer, return_list,
                               time_list, seed_list, ckpt_path, epoch, episode, best_weight, seed)
             episode_time = (time.time() - episode_begin_time) // 60
-            if episode % 40 == 0:
+            if episode % 10 == 0:
                 print('\033[32m[ %d, <%d/%d>, %.2f min ]\033[0m: return: %d'
-                  % (seed, episode+1, total_episodes, episode_time, np.mean(return_list[-40:])))
+                  % (seed, episode+1, total_episodes, episode_time, np.mean(return_list[-10:])))
         s_episode = 0
     env.close()
     agent.actor.load_state_dict(actor_best_weight)
@@ -295,6 +295,105 @@ def save_SAC_data(writer, replay_buffer, return_list, time_list,
         # 绘图数据存档
         save_plot_data(return_list, time_list, seed_list, 
                    ckpt_path, seed, replay_buffer.size())
+
+
+def train_DDPG_agent(
+    env: object,
+    agent: object,
+    writer: int,
+    s_epoch: int,
+    total_epochs: int,
+    s_episode: int,
+    total_episodes: int,
+    replay_buffer: object,
+    minimal_size: int,
+    batch_size: int,
+    return_list: list,
+    time_list: list,
+    seed_list: list,
+    seed: int,
+    ckpt_path: str,
+):
+    """
+    异策略
+    """
+    def save_data():
+        system_type = sys.platform
+        ckpt = f'ckpt/{ckpt_path}'
+        csv_path = f'data/plot_data/{ckpt_path}'
+        os.makedirs(ckpt) if not os.path.exists(ckpt) else None
+        os.makedirs(csv_path) if not os.path.exists(csv_path) else None
+        alg_name = ckpt_path.split('/')[1]
+        torch.save(
+            {
+                "epoch": epoch,
+                "episode": episode,
+                "actor_best_weight": actor_best_weight,
+                "critic_best_weight": critic_best_weight,
+                "return_list": return_list,
+                "seed_list": seed_list,
+                "time_list": time_list,
+            },
+            f'{ckpt}/{seed}_{system_type}.pt',
+        )
+        return_save = pd.DataFrame({
+            'Algorithm': [alg_name] * len(return_list),
+            'Seed': [seed] * len(return_list),
+            "Return": return_list,
+            "Pool size": pool_list,
+            })
+        return_save.to_csv(f'{csv_path}/{seed}_{system_type}.csv', index=False, encoding='utf-8-sig')
+    
+    return_list = []
+    time_list = []
+    seed_list = []
+    pool_list = []
+    start_time = time.time()
+    best_score = -1e10  # 初始分数
+    for epoch in range(s_epoch, total_epochs):
+        for episode in range(s_episode, total_episodes):
+            episode_begin_time = time.time()
+            episode_return = 0
+            step = 0
+            state, done, truncated = env.reset(seed=seed)[0], False, False
+            state = state.reshape(-1)
+            while not (done | truncated):
+                action = agent.take_action(state)
+                next_state, reward, done, truncated, info = env.step(action)
+                next_state = next_state.reshape(-1)
+                replay_buffer.add(state, action, reward, next_state, done, truncated)
+                state = next_state
+                episode_return += reward
+                if replay_buffer.size() > minimal_size:  # 确保先收集到一定量的数据再采样
+                    b_s, b_a, b_r, b_ns, b_d, b_t = replay_buffer.sample(batch_size)
+                    transition_dict = {
+                        "states": b_s, "actions": b_a, "next_states": b_ns,
+                        "rewards": b_r, "dones": b_d, "truncated": b_t,
+                    }
+                    agent.update(transition_dict)
+                step += 1
+            return_list.append(episode_return)
+            time_list.append(time.strftime('%m-%d %H:%M:%S', time.localtime()))
+            seed_list.append(seed)
+            pool_list.append(replay_buffer.size())
+            if episode_return > best_score:
+                actor_best_weight = agent.actor.state_dict()
+                critic_best_weight = agent.critic.state_dict()
+                best_score = episode_return
+            if writer > 0:  # 存档
+                save_data()
+                
+            episode_time = (time.time() - episode_begin_time) // 60
+            if episode % 10 == 0:
+                print('\033[32m[ %d, <%d/%d>, %.2f min ]\033[0m: return: %d'
+                  % (seed, episode+1, total_episodes, episode_time, np.mean(return_list[-10:])))
+        s_episode = 0
+    env.close()
+    agent.actor.load_state_dict(actor_best_weight)
+    agent.critic.load_state_dict(critic_best_weight)
+    total_time = (time.time() - start_time) // 60
+    print("\033[32m[ 总耗时 ]\033[0m %d分钟" % total_time)
+    return return_list, total_time
 
 
 def train_DQN(

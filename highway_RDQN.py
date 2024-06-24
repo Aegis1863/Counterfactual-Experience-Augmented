@@ -43,8 +43,7 @@ def save_DQN_data(replay_buffer, return_list, time_list, pool_list,
                   seed_list, ckpt_path, epoch, episode, epsilon,
                   best_weight, seed):
     path = "/".join(ckpt_path.split('/')[:-1])
-    if not os.path.exists(path):
-        os.makedirs(path)
+    os.makedirs(path) if not os.path.exists(path) else None
     # 训练权重存档
     torch.save({
         'epoch': epoch,
@@ -62,12 +61,12 @@ def save_DQN_data(replay_buffer, return_list, time_list, pool_list,
 
 def save_plot_data(return_list, time_list, seed_list, ckpt_path, seed, pool_size=None):
     system_type = sys.platform  # 操作系统标识
-    # ckpt/SAC/big-intersection_42_win32.pt
+    # ckpt/SAC
     mission_name = ckpt_path.split('/')[1]
     alg_name = ckpt_path.split('/')[2]  # 在本项目路径命名中，第二个是算法名
     file_path = f"data/plot_data/{mission_name}/{alg_name}"  # data/plot_data/highway/SAC/
-    if not os.path.exists(file_path):  # 路径不存在时创建
-        os.makedirs(file_path)
+    # 路径不存在时创建
+    os.makedirs(file_path) if not os.path.exists(file_path) else None
     log_path = f"{file_path}/{seed}_{system_type}.csv"
     return_save = pd.DataFrame()
     return_save["Algorithm"] = [alg_name] * len(return_list)  # 算法名称

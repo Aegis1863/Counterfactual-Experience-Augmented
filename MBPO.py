@@ -38,7 +38,6 @@ parser.add_argument('--begin_seed', default=1, type=int, help='起始种子')
 parser.add_argument('--end_seed', default=7, type=int, help='结束种子')
 
 args = parser.parse_args()
-args.model_name = args.mission + '_' + args.model_name
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class PolicyNet(torch.nn.Module):
