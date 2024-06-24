@@ -838,7 +838,7 @@ class DQNAgent:
                 # 其他记录信息
                 pbar.update(1)
             # 保存数据
-            if args.writer > 1:
+            if args.writer > 0:
                 save_DQN_data(self.memory, scores, time_list, pool_list, seed_list, CKP_PATH, 
                                 0, frame_idx, 0, best_weight, seed)
         self._plot(frame_idx, scores, losses)
