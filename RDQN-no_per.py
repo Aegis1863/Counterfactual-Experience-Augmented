@@ -30,19 +30,19 @@ warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='CEA 任务')
 parser.add_argument('--model_name', default="CEA-No_PER", type=str, help='模型名称, 任务_模型')
-parser.add_argument('--mission', default="highway", type=str, help='任务名称')
+parser.add_argument('--mission', default="sumo", type=str, help='任务名称')
 parser.add_argument('-n', '--net', default="env/big-intersection/big-intersection.net.xml", type=str, help='SUMO路网文件路径')
 parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersection.rou.xml", type=str, help='SUMO车流文件路径')
 parser.add_argument('-w', '--writer', default=0, type=int, help='存档等级, 0: 不存，1: 本地')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
-parser.add_argument('-e', '--step', default=20000, type=int, help='运行回合数, sumo 60000, highway 20000')
+parser.add_argument('-e', '--step', default=30, type=int, help='运行回合数, sumo 60000, highway 20000')
 parser.add_argument('-r', '--reward', default='diff-waiting-time', type=str, help='奖励函数')
 parser.add_argument('--begin_time', default=1000, type=int, help='回合开始时间')
 parser.add_argument('--duration', default=2000, type=int, help='单回合运行时间')
-parser.add_argument('--begin_seed', default=1, type=int, help='起始种子')
-parser.add_argument('--end_seed', default=7, type=int, help='结束种子')
+parser.add_argument('--begin_seed', default=42, type=int, help='起始种子')
+parser.add_argument('--end_seed', default=45, type=int, help='结束种子')
 
 args = parser.parse_args()
 
@@ -832,7 +832,7 @@ if __name__ == '__main__':
         args.sta = True
         args.sta_kind = 'regular'
     # ------------------------
-    args.model_name = args.model_name + '~' + 'cvae' if args.sta else args.model_name
+    args.model_name = args.model_name
     
     # 其他
     system_type = sys.platform  # 操作系统

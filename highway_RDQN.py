@@ -956,7 +956,6 @@ if __name__ == '__main__':
         args.sta_kind = 'regular'
         args.symbol = args.sta_kind
     # ------------------------
-    args.model_name = args.model_name + '~' + 'cvae' if args.sta else args.model_name
     
     # 其他
     system_type = sys.platform  # 操作系统

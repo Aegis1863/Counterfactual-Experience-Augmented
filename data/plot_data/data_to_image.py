@@ -17,11 +17,11 @@ def cumulative_mean(data):
 colors = ['#e5071a', '#00CD00', '#1e90ff', '#FF9900', '#fd79a8', '#8074b2', '#636e72']
 
 # -------------------
-algs = ['CEA (ours)', 'MBPO', 'PPO', 'RDQN', 'SAC']  # * 给出算法文件夹名
-mission = 'sumo'
+# algs = ['CEA (ours)', 'MBPO', 'PPO', 'RDQN', 'SAC']  # * 给出算法文件夹名
+# mission = 'sumo'
 
-# algs = ['CEA (ours)', 'MBPO', 'RDQN', 'SAC', 'PPO']  # * 给出算法文件夹名
-# mission = 'highway'
+algs = ['CEA (ours)', 'CEA-No_PER', 'RDQN', 'RDQN-No_PER']  # * 给出算法文件夹名
+mission = 'sumo'
 target_index = 'Return'
 # -------------------
 
@@ -38,7 +38,7 @@ for index, alg in enumerate(algs):
     ndf['Mean'] = df.mean(axis=1)
     ndf['Max'] = df.max(axis=1)
     ndf['Min'] = df.min(axis=1)
-    print(f'{alg} mean of {target_index}:', round(ndf['Mean'].mean(), 3))
+    print(f'{alg} mean of {target_index}:', round(ndf['Mean'].values[-1], 3))
     ax = sns.set_theme(style='ticks', font_scale=1.3)
     plt.rcParams['font.family'] = 'Times New Roman'
     plt.grid(ls=':', color='grey', lw=1)
