@@ -17,9 +17,11 @@ def cumulative_mean(data):
 colors = ['#e5071a', '#00CD00', '#1e90ff', '#FF9900', '#fd79a8', '#8074b2', '#636e72']
 
 # -------------------
-# algs = ['CEA', 'DeulingDQN', 'MBPO', 'PPO', 'RDQN', 'SAC']  # * 给出算法文件夹名
-algs = ['CEA', 'DeulingDQN', 'MBPO', 'RDQN', 'SAC']  # * 给出算法文件夹名
-mission = 'highway'
+algs = ['CEA (ours)', 'MBPO', 'PPO', 'RDQN', 'SAC']  # * 给出算法文件夹名
+mission = 'sumo'
+
+# algs = ['CEA (ours)', 'MBPO', 'RDQN', 'SAC', 'PPO']  # * 给出算法文件夹名
+# mission = 'highway'
 target_index = 'Return'
 # -------------------
 
@@ -58,5 +60,6 @@ for index, alg in enumerate(algs):
 for spine in ax.spines.values():
     spine.set_linewidth(1.5)
 plt.legend()
+# plt.legend(loc=(-0, -0.4), ncol=2, fontsize=12, frameon=False)
 plt.show()
-# plt.savefig('C:/Users/Bowen/Desktop/仓库/My_papers/TESCAL/figures/exp-others-queue.pdf', bbox_inches='tight')
+# plt.savefig('C:/Users/Bowen/Desktop/repos/My_Papers/VAE based model/sumo-exp.pdf', bbox_inches='tight')

@@ -28,8 +28,8 @@ import argparse
 import warnings
 warnings.filterwarnings('ignore')
 
-parser = argparse.ArgumentParser(description='RDQN 任务')
-parser.add_argument('--model_name', default="RDQN", type=str, help='模型名称, 任务_模型')
+parser = argparse.ArgumentParser(description='CEA 任务')
+parser.add_argument('--model_name', default="CEA-No_PER", type=str, help='模型名称, 任务_模型')
 parser.add_argument('--mission', default="highway", type=str, help='任务名称')
 parser.add_argument('-n', '--net', default="env/big-intersection/big-intersection.net.xml", type=str, help='SUMO路网文件路径')
 parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersection.rou.xml", type=str, help='SUMO车流文件路径')
@@ -239,6 +239,44 @@ class ReplayBuffer:
             cf_sped=self.cf_sped_buf[idxs],
         )
     
+    def sample_new_real_exp(self, batch_size):
+        '''采样未经反事实推断的真实经验，即exp_type和sped_buf值同时为0的'''
+        assert len(self) > 0
+        indices = np.where((self.exp_type_buf==0) & (self.cf_sped_buf==0))[0][:self.size-1]
+        obs = self.obs_buf[indices]
+        next_obs = self.next_obs_buf[indices]
+        acts = self.acts_buf[indices]
+        rews = self.rews_buf[indices]
+        done = self.done_buf[indices]
+        self.cf_sped_buf[indices] = 1  # 标记为已经采样过
+        return dict(
+            obs=obs,
+            next_obs=next_obs,
+            acts=acts,
+            rews=rews,
+            done=done,
+        )
+    
+    def retrieve_real_experiences(self) -> Dict[str, np.ndarray]:
+        """采样真实经验，即exp_type值为0的"""
+        assert len(self) > 0
+
+        indices = np.where(self.exp_type_buf==0)[0][:self.size-1]
+        
+        obs = self.obs_buf[indices]
+        next_obs = self.next_obs_buf[indices]
+        acts = self.acts_buf[indices]
+        rews = self.rews_buf[indices]
+        done = self.done_buf[indices]
+        
+        return dict(
+            obs=obs,
+            next_obs=next_obs,
+            acts=acts,
+            rews=rews,
+            done=done,
+        )
+    
     def _get_n_step_info(
         self, n_step_buffer: Deque, gamma: float
     ) -> Tuple[np.int64, np.ndarray, bool]:
@@ -341,170 +379,6 @@ class NoisyLinear(nn.Module):
 
         return x.sign().mul(x.abs().sqrt())
 
-class PrioritizedReplayBuffer(ReplayBuffer):
-    """Prioritized Replay buffer.
-    
-    Attributes:
-        max_priority (float): max priority
-        tree_ptr (int): next index of tree
-        alpha (float): alpha parameter for prioritized replay buffer
-        sum_tree (SumSegmentTree): sum tree for prior
-        min_tree (MinSegmentTree): min tree for min prior to get max weight
-        
-    """
-    
-    def __init__(
-        self, 
-        obs_dim: int, 
-        size: int, 
-        batch_size: int = 32, 
-        alpha: float = 0.6,
-        n_step: int = 1, 
-        gamma: float = 0.99,
-    ):
-        """Initialization."""
-        assert alpha >= 0
-        
-        super(PrioritizedReplayBuffer, self).__init__(
-            obs_dim, size, batch_size, n_step, gamma
-        )
-        self.max_priority, self.tree_ptr = 1.0, 0
-        self.alpha = alpha
-        
-        # capacity must be positive and a power of 2.
-        tree_capacity = 1
-        while tree_capacity < self.max_size:
-            tree_capacity *= 2
-
-        self.sum_tree = SumSegmentTree(tree_capacity)
-        self.min_tree = MinSegmentTree(tree_capacity)
-        
-    def store(
-        self, 
-        obs: np.ndarray, 
-        act: int, 
-        rew: float, 
-        next_obs: np.ndarray, 
-        done: bool,
-        exp_type: bool,
-        cf_sped: bool,
-    ) -> Tuple[np.ndarray, np.ndarray, float, np.ndarray, bool]:
-        """Store experience and priority."""
-        transition = super().store(obs, act, rew, next_obs, done, exp_type, cf_sped)
-        
-        if transition:
-            self.sum_tree[self.tree_ptr] = self.max_priority ** self.alpha
-            self.min_tree[self.tree_ptr] = self.max_priority ** self.alpha
-            self.tree_ptr = (self.tree_ptr + 1) % self.max_size
-        
-        return transition
-
-    def sample_batch(self, beta: float = 0.4) -> Dict[str, np.ndarray]:
-        """Sample a batch of experiences."""
-        assert len(self) >= self.batch_size
-        assert beta >= 0
-        
-        indices = self._sample_proportional()
-        
-        obs = self.obs_buf[indices]
-        next_obs = self.next_obs_buf[indices]
-        acts = self.acts_buf[indices]
-        rews = self.rews_buf[indices]
-        done = self.done_buf[indices]
-        exp_type = self.exp_type_buf[indices]
-        cf_sped = self.cf_sped_buf[indices]
-        weights = np.array([self._calculate_weight(i, beta) for i in indices])
-        
-        return dict(
-            obs=obs,
-            next_obs=next_obs,
-            acts=acts,
-            rews=rews,
-            done=done,
-            exp_type=exp_type,
-            cf_sped=cf_sped,
-            weights=weights,
-            indices=indices,
-        )
-    
-    def retrieve_real_experiences(self) -> Dict[str, np.ndarray]:
-        """采样真实经验，即exp_type值为0的"""
-        assert len(self) > 0
-
-        indices = np.where(self.exp_type_buf==0)[0][:self.size-1]
-        
-        obs = self.obs_buf[indices]
-        next_obs = self.next_obs_buf[indices]
-        acts = self.acts_buf[indices]
-        rews = self.rews_buf[indices]
-        done = self.done_buf[indices]
-        
-        return dict(
-            obs=obs,
-            next_obs=next_obs,
-            acts=acts,
-            rews=rews,
-            done=done,
-        )
-    
-    def sample_new_real_exp(self, batch_size):
-        '''采样未经反事实推断的真实经验，即exp_type和sped_buf值同时为0的'''
-        assert len(self) > 0
-        indices = np.where((self.exp_type_buf==0) & (self.cf_sped_buf==0))[0][:self.size-1]
-        obs = self.obs_buf[indices]
-        next_obs = self.next_obs_buf[indices]
-        acts = self.acts_buf[indices]
-        rews = self.rews_buf[indices]
-        done = self.done_buf[indices]
-        self.cf_sped_buf[indices] = 1  # 标记为已经采样过
-        return dict(
-            obs=obs,
-            next_obs=next_obs,
-            acts=acts,
-            rews=rews,
-            done=done,
-        )
-    
-    def update_priorities(self, indices: List[int], priorities: np.ndarray):
-        """Update priorities of sampled transitions."""
-        assert len(indices) == len(priorities)
-
-        for idx, priority in zip(indices, priorities):
-            assert priority > 0
-            assert 0 <= idx < len(self)
-
-            self.sum_tree[idx] = priority ** self.alpha
-            self.min_tree[idx] = priority ** self.alpha
-
-            self.max_priority = max(self.max_priority, priority)
-            
-    def _sample_proportional(self) -> List[int]:
-        """Sample indices based on proportions."""
-        indices = []
-        p_total = self.sum_tree.sum(0, len(self) - 1)
-        segment = p_total / self.batch_size
-        
-        for i in range(self.batch_size):
-            a = segment * i
-            b = segment * (i + 1)
-            upperbound = random.uniform(a, b)
-            idx = self.sum_tree.retrieve(upperbound)
-            indices.append(idx)
-            
-        return indices
-    
-    def _calculate_weight(self, idx: int, beta: float):
-        """Calculate the weight of the experience at idx."""
-        # get max weight
-        p_min = self.min_tree.min() / self.sum_tree.sum()
-        max_weight = (p_min * len(self)) ** (-beta)
-        
-        # calculate weights
-        p_sample = self.sum_tree[idx] / self.sum_tree.sum()
-        weight = (p_sample * len(self)) ** (-beta)
-        weight = weight / max_weight
-        
-        return weight
 
 class Network(nn.Module):
     def __init__(
@@ -662,10 +536,9 @@ class DQNAgent:
         # memory for 1-step Learning
         self.beta = beta
         self.prior_eps = prior_eps
-        if args.per:
-            self.memory = PrioritizedReplayBuffer(
-                obs_dim, memory_size, batch_size, alpha=alpha, gamma=gamma
-            )
+        self.memory = ReplayBuffer(
+            obs_dim, memory_size, batch_size, gamma=gamma
+        )
         
         # memory for N-step Learning
         self.use_n_step = True if n_step > 1 else False
@@ -739,37 +612,22 @@ class DQNAgent:
     def update_model(self) -> torch.Tensor:
         """Update the model by gradient descent."""
         # PER needs beta to calculate weights
-        samples = self.memory.sample_batch(self.beta)
-        weights = torch.FloatTensor(samples["weights"].reshape(-1, 1)).to(self.device)
-        indices = samples["indices"]
+        samples = self.memory.sample_batch()
         
         # 1-step Learning loss
         elementwise_loss = self._compute_dqn_loss(samples, self.gamma)
         
         # PER: importance sampling before average
-        loss = torch.mean(elementwise_loss * weights)
+        loss = torch.mean(elementwise_loss)
         
         # N-step Learning loss
         # we are gonna combine 1-step loss and n-step loss so as to
         # prevent high-variance. The original rainbow employs n-step loss only.
-        if self.use_n_step:
-            gamma = self.gamma ** self.n_step
-            samples = self.memory_n.sample_batch_from_idxs(indices)
-            elementwise_loss_n_loss = self._compute_dqn_loss(samples, gamma)
-            elementwise_loss += elementwise_loss_n_loss
-            
-            # PER: importance sampling before average
-            loss = torch.mean(elementwise_loss * weights)
 
         self.optimizer.zero_grad()
         loss.backward()
         clip_grad_norm_(self.dqn.parameters(), 10.0)
         self.optimizer.step()
-        
-        # PER: update priorities
-        loss_for_prior = elementwise_loss.detach().cpu().numpy()
-        new_priorities = loss_for_prior + self.prior_eps
-        self.memory.update_priorities(indices, new_priorities)
         
         # NoisyNet: reset noise
         self.dqn.reset_noise()

@@ -22,7 +22,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='DQN 任务')
-parser.add_argument('--model_name', default="DeulingDQN", type=str, help='模型名称, 任务_模型')
+parser.add_argument('--model_name', default="DuelingDQN", type=str, help='模型名称, 任务_模型')
 parser.add_argument('--mission', default="sumo", type=str, help='任务名称')
 parser.add_argument('--symbol', default=None, type=str, help='特殊唯一标识')
 parser.add_argument('-n', '--net', default="env/big-intersection/big-intersection.net.xml", type=str, help='SUMO路网文件路径')
