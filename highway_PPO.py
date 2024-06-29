@@ -147,12 +147,27 @@ if __name__ == '__main__':
     # 环境相关
     mission = args.model_name.split('_')[0]
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    env = gym.make('highway-fast-v0')
-    env.configure({
-        "lanes_count": 4,
-        "vehicles_density": 2,
-        "duration": 100,
-    })
+    # 环境相关
+    if args.mission == 'sumo':
+        env = gym.make('sumo-rl-v0',
+                    net_file=args.net,
+                    route_file=args.flow,
+                    use_gui=False,
+                    begin_time=args.begin_time,
+                    num_seconds=args.duration,
+                    reward_fn=args.reward,
+                    sumo_seed=args.begin_seed,
+                    sumo_warnings=False,
+                    additional_sumo_cmd='--no-step-log')
+    elif args.mission == 'highway': 
+        env = gym.make('highway-fast-v0')
+        env.configure({
+            "lanes_count": 4,
+            "vehicles_density": 2,
+            "duration": 100,
+        })
+    elif args.mission == 'intersection':
+        env = gym.make("intersection-v0")
     # PPO相关
     actor_lr = 3e-4
     critic_lr = 3e-4
