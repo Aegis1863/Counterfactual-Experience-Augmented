@@ -15,6 +15,8 @@ def cumulative_mean(data):
     return cumulative_mean
 
 colors = ['#e5071a', '#00CD00', '#1e90ff', '#FF9900', '#fd79a8', '#8074b2', '#636e72']
+markers = ['o', 's', '^', 'v', 'D']
+
 
 # -------------------
 # algs = ['CEA (ours)', 'MBPO', 'PPO', 'RDQN', 'SAC']  # * 给出算法文件夹名
@@ -25,7 +27,7 @@ mission = 'sumo'
 target_index = 'Return'
 # -------------------
 
-plt.figure(figsize=(8, 5))
+plt.figure(figsize=(7, 5))
 
 for index, alg in enumerate(algs):
     df = pd.DataFrame()
@@ -38,8 +40,9 @@ for index, alg in enumerate(algs):
     ndf['Mean'] = df.mean(axis=1)
     ndf['Max'] = df.max(axis=1)
     ndf['Min'] = df.min(axis=1)
-    print(f'{alg} mean of {target_index}:', round(ndf['Mean'].values[-1], 3))
-    ax = sns.set_theme(style='ticks', font_scale=1.3)
+    print(f'{alg} mean of {target_index}:', round(ndf['Mean'].mean(), 3))
+    print(f'{alg} last of {target_index}:', round(ndf['Mean'].to_list()[-1], 3))
+    ax = sns.set_theme(style='ticks', font_scale=1.5)
     plt.rcParams['font.family'] = 'Times New Roman'
     plt.grid(ls=':', color='grey', lw=1)
     plt.xlabel('Episode')
@@ -52,14 +55,14 @@ for index, alg in enumerate(algs):
     max_y = ndf['Max']
     x = range(len(y))
     plt.fill_between(x, smooth(min_y), smooth(max_y), alpha=0.15, color=colors[index], edgecolor=colors[index], linestyle='--', linewidth=1)
-    ax = sns.lineplot(x=x, y=smooth(y), label=alg, c=colors[index], lw=2)
-    
+    ax = sns.lineplot(x=x, y=smooth(y), label=alg, c=colors[index], lw=2, marker=markers[index], markevery=2, ms=8)
+
 # plt.axhline(y=42.667, color='gray', linestyle='--', label='Fixed 20s', lw=2)
 # plt.axhline(y=70.167, color='gray', linestyle='-', label='Monte Carlo', lw=2)
 
 for spine in ax.spines.values():
     spine.set_linewidth(1.5)
-plt.legend()
+plt.legend(loc='lower right')
 # plt.legend(loc=(-0, -0.4), ncol=2, fontsize=12, frameon=False)
 plt.show()
-# plt.savefig('C:/Users/Bowen/Desktop/repos/My_Papers/VAE based model/sumo-exp.pdf', bbox_inches='tight')
+# plt.savefig('C:/Users/Bowen/Desktop/repos/My_Papers/VAE based model/sumo-pool.pdf', bbox_inches='tight')

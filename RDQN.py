@@ -29,8 +29,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='RDQN 任务')
-parser.add_argument('--model_name', default="RDQN", type=str, help='模型名称, 任务_模型')
-parser.add_argument('--mission', default="highway", type=str, help='任务名称')
+parser.add_argument('--model_name', default="RDQN", type=str, help='模型名称')
+parser.add_argument('--mission', default="intersection", type=str, help='任务名称, sumo/highway/intersection')
 parser.add_argument('-n', '--net', default="env/big-intersection/big-intersection.net.xml", type=str, help='SUMO路网文件路径')
 parser.add_argument('-f', '--flow', default="env/big-intersection/big-intersection.rou.xml", type=str, help='SUMO车流文件路径')
 parser.add_argument('-w', '--writer', default=0, type=int, help='存档等级, 0: 不存，1: 本地')
@@ -662,10 +662,9 @@ class DQNAgent:
         # memory for 1-step Learning
         self.beta = beta
         self.prior_eps = prior_eps
-        if args.per:
-            self.memory = PrioritizedReplayBuffer(
-                obs_dim, memory_size, batch_size, alpha=alpha, gamma=gamma
-            )
+        self.memory = PrioritizedReplayBuffer(
+            obs_dim, memory_size, batch_size, alpha=alpha, gamma=gamma
+        )
         
         # memory for N-step Learning
         self.use_n_step = True if n_step > 1 else False
@@ -946,13 +945,15 @@ if __name__ == '__main__':
                     sumo_seed=args.begin_seed,
                     sumo_warnings=False,
                     additional_sumo_cmd='--no-step-log')
-    else: 
+    elif args.mission == 'highway': 
         env = gym.make('highway-fast-v0')
         env.configure({
             "lanes_count": 4,
             "vehicles_density": 2,
             "duration": 100,
         })
+    elif args.mission == 'intersection':
+        env = gym.make("intersection-v0")
         
     def seed_torch(seed):
         np.random.seed(seed)
@@ -970,9 +971,9 @@ if __name__ == '__main__':
 
     # VAE
     # --------- 调试用 --------
-    if sys.platform != 'linux':
-        args.sta = True
-        args.sta_kind = 'regular'
+    # if sys.platform != 'linux':
+    #     args.sta = True
+    #     args.sta_kind = 'regular'
     # ------------------------
     args.model_name = args.model_name + '~' + 'cvae' if args.sta else args.model_name
     

@@ -148,13 +148,15 @@ if __name__ == '__main__':
                     sumo_seed=args.begin_seed,
                     sumo_warnings=False,
                     additional_sumo_cmd='--no-step-log')
-    else: 
+    elif args.mission == 'highway': 
         env = gym.make('highway-fast-v0')
         env.configure({
             "lanes_count": 4,
             "vehicles_density": 2,
             "duration": 100,
         })
+    elif args.mission == 'intersection':
+        env = gym.make("intersection-v0")
         
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     

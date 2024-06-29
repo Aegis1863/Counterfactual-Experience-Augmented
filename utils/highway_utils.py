@@ -68,7 +68,7 @@ def compute_advantage(gamma, lmbda, td_delta):
     return advantage_list
 
 
-def save_plot_data(return_list, time_list, seed_list, 
+def save_plot_data(return_list, time_list, seed_list, pool_list,
                    ckpt_path, seed, pool_size=None):
     system_type = sys.platform  # 操作系统标识
     # ckpt/SAC/big-intersection_42_win32.pt
@@ -82,8 +82,8 @@ def save_plot_data(return_list, time_list, seed_list,
     return_save["Algorithm"] = [alg_name] * len(return_list)  # 算法名称
     return_save["Seed"] = seed_list
     return_save["Return"] = return_list
-    if pool_size:
-        return_save["Pool size"] = pool_size
+    if pool_list:
+        return_save["Pool size"] = pool_list
     return_save["Log time"] = time_list
     return_save.to_csv(log_path, index=False, encoding='utf-8-sig')
 
@@ -215,6 +215,7 @@ def train_SAC_agent(
     """
     异策略
     """
+    pool_list = []
     start_time = time.time()
     best_score = -1e10  # 初始分数
     for epoch in range(s_epoch, total_epochs):
@@ -242,6 +243,7 @@ def train_SAC_agent(
             return_list.append(episode_return)
             time_list.append(time.strftime('%m-%d %H:%M:%S', time.localtime()))
             seed_list.append(seed)
+            pool_list.append(len(replay_buffer))
 
             if episode_return > best_score:
                 actor_best_weight = agent.actor.state_dict()
@@ -252,7 +254,7 @@ def train_SAC_agent(
                                critic_1_best_weight,
                                critic_2_best_weight]
             if writer > 0:  # 存档
-                save_SAC_data(writer, replay_buffer, return_list,
+                save_SAC_data(writer, replay_buffer, return_list, pool_list,
                               time_list, seed_list, ckpt_path, epoch, episode, best_weight, seed)
             episode_time = (time.time() - episode_begin_time) // 60
             if episode % 10 == 0:
@@ -267,13 +269,13 @@ def train_SAC_agent(
     print("\033[32m[ 总耗时 ]\033[0m %d分钟" % total_time)
     return return_list, total_time
 
-def save_SAC_data(writer, replay_buffer, return_list, time_list, 
+def save_SAC_data(writer, replay_buffer, return_list, pool_list, time_list, 
                   seed_list, ckpt_path, epoch, episode, weight, seed):
     actor_best_weight, critic_1_best_weight, critic_2_best_weight = weight
     if writer > 1:  # wandb 存档
         wandb.log({
             "_return_list": return_list[-1],
-            "pool_size": replay_buffer.size(),
+            "pool_size": pool_list[-1],
             })
     # 训练权重存档
     if writer > 0:
@@ -287,6 +289,7 @@ def save_SAC_data(writer, replay_buffer, return_list, time_list,
                 "return_list": return_list,
                 "time_list": time_list,
                 "seed_list": seed_list,
+                "pool_list": pool_list,
                 "replay_buffer": replay_buffer,
             },
             ckpt_path,
@@ -294,7 +297,7 @@ def save_SAC_data(writer, replay_buffer, return_list, time_list,
 
         # 绘图数据存档
         save_plot_data(return_list, time_list, seed_list, 
-                   ckpt_path, seed, replay_buffer.size())
+                   ckpt_path, seed, pool_list)
 
 
 def train_DDPG_agent(
