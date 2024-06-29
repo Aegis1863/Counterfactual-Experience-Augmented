@@ -68,8 +68,7 @@ def compute_advantage(gamma, lmbda, td_delta):
     return advantage_list
 
 
-def save_plot_data(return_list, time_list, seed_list, pool_list,
-                   ckpt_path, seed, pool_size=None):
+def save_plot_data(return_list, time_list, seed_list, ckpt_path, seed, pool_list=None):
     system_type = sys.platform  # 操作系统标识
     # ckpt/SAC/big-intersection_42_win32.pt
     mission_name = ckpt_path.split('/')[1]

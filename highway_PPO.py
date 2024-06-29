@@ -23,10 +23,10 @@ warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='PPO 任务')
 parser.add_argument('--model_name', default="PPO", type=str, help='任务_基本算法名称')
-parser.add_argument('--mission', default="highway", type=str, help='任务名称')
+parser.add_argument('--mission', default="intersection", type=str, help='任务名称')
 parser.add_argument('--sta', action="store_true", help='是否利用sta辅助')
 parser.add_argument('--sta_kind', default=False, help='sta 预训练模型类型，"expert"或"regular"')
-parser.add_argument('-w', '--writer', default=1, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
+parser.add_argument('-w', '--writer', default=0, type=int, help='存档等级, 0: 不存，1: 本地 2: 本地 + wandb本地, 3. 本地 + wandb云存档')
 parser.add_argument('-o', '--online', action="store_true", help='是否上传wandb云')
 parser.add_argument('-e', '--episodes', default=500, type=int, help='运行回合数')
 parser.add_argument('--begin_seed', default=1, type=int, help='起始种子')
@@ -220,7 +220,7 @@ if __name__ == '__main__':
                 "mission name": args.model_name
                 }
             )
-        print('开始训练')
+        print(f'开始训练，任务: {args.mission}')
         return_list, train_time = train_PPO_agent(env, agent, args.writer, s_epoch, total_epochs,
                                                   s_episode, args.episodes, return_list, time_list, seed_list,
                                                   seed, CKP_PATH,
