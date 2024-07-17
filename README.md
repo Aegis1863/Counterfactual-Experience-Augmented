@@ -2,4 +2,4 @@
 
 The code files have not been fully organized and are only for temporary reference.
 
-Counterfactual experience augmentation method reference `counterfactual_exp_expand` function in `highway_RDQNRD.py.`
+**Counterfactual experience augmentation** method refers to `counterfactual_exp_expand` function in `highway_RDQNRD.py.`

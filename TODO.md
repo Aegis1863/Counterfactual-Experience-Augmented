@@ -8,9 +8,9 @@
     - [X] pretrain VAE
       - [X] expert
       - [X] regular
-- [ ] highway
-  - [ ] DQN
-    - [ ] None
+- [X] highway
+  - [X] DQN
+    - [X] None
     - [ ] VAE
       - [ ] full train
     - [ ] pretrain VAE
