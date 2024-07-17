@@ -583,7 +583,7 @@ class DQNAgent:
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, np.float64, bool]:
         """Take an action and return the response of the env."""
-        # ! 反事实经验拓展 # TODO
+        # * 反事实经验拓展
         if self.sta and self.total_step % (2 * self.batch_size) == 0 and self.total_step > 1 and self.memory.size < self.memory.capacity:
             self.memory = counterfactual_exp_expand(self.memory, self.sta, self.batch_size, self.action_dim, self.distance_threshold)
             # self.distance_threshold = max(self.distance_threshold * (self.memory.size - self.memory.capacity)**2 / self.memory.capacity**2, 0.05)
