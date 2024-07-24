@@ -11,13 +11,13 @@
 - [X] highway
   - [X] DQN
     - [X] None
-    - [ ] VAE
-      - [ ] full train
-    - [ ] pretrain VAE
-      - [ ] regular
-  - [ ] PPO
-    - [ ] None
-    - [ ] VAE
-      - [ ] full train
-    - [ ] pretrain VAE
-      - [ ] regular
+    - [X] VAE
+      - [X] full train
+    - [X] pretrain VAE
+      - [X] regular
+  - [X] PPO
+    - [X] None
+    - [X] VAE
+      - [X] full train
+    - [X] pretrain VAE
+      - [X] regular
